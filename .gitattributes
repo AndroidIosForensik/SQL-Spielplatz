@@ -1,0 +1,3 @@
+# Das Bundle ist eine generierte Einzeldatei: Zeilenenden nicht umschreiben,
+# sonst ändern sich Bytes in den eingebetteten JSON-Blöcken.
+*.html -text
