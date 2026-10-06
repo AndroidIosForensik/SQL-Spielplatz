@@ -467,20 +467,6 @@ function joinOptions(blocks, relations) {
   return options;
 }
 
-// Rollen-Namen: nur Buchstaben, Ziffern, _ (Umlaute werden umgeschrieben), eindeutig in der Abfrage
-function cleanRef(raw) {
-  let s = String(raw || '').trim().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
-    .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ß/g, 'ss').replace(/\W+/g, '_');
-  if (s && (!/^[A-Za-z_]/.test(s) || ALIAS_RESERVED.test(s))) s = 't_' + s;
-  return s;
-}
-function freeRef(sources, table) {
-  const base = cleanRef(unquoteIdent(splitIdent(table).pop())) || 'tabelle';
-  let n = 2;
-  while (sources.some(s => s.ref === base + '_' + n)) n++;
-  return base + '_' + n;
-}
-function localName(table) { return unquoteIdent(splitIdent(table || '').pop() || ''); }
 // Kurz und immer aktuell (auch nach dem Umbenennen einer Rolle): „reaktionen ⟶ Schreiber (nutzer)“
 function shortRef(ref, table) { return ref === table ? localName(table) : ref + ' (' + localName(table) + ')'; }
 function joinLabel(j) {
@@ -496,14 +482,19 @@ function joinShort(j) {
 }
 
 // Eingabe für den Rollen-Namen einer Tabelle (SQL: AS). Übernommen wird beim Verlassen oder Enter.
+// Umbenennen zieht überall mit: Spalten, Filter, Sortierung und Verbindungen, die an dieser Rolle hängen.
 function RoleInput({ blocks, setBlocks, table, current }) {
   const [draft, setDraft] = React.useState(current === table ? '' : current);
+  const [clash, setClash] = React.useState(null);
   React.useEffect(() => { setDraft(current === table ? '' : current); }, [current, table]);
   const others = querySources(blocks).filter(s => s.ref !== current);
   // Kommt die Tabelle mehrfach vor, darf nur eine davon ohne eigenen Namen bleiben
   const needed = current !== table && others.some(s => s.table === table);
   const commit = () => {
-    const next = [cleanRef(draft) || table].map(n => others.some(s => s.ref === n || s.table === n) ? current : n)[0];
+    const wanted = cleanRef(draft) || table;
+    const taken = wanted !== current && refTaken(others, wanted);
+    const next = taken ? current : wanted;
+    setClash(taken ? wanted : null);
     setDraft(next === table ? '' : next);
     if (next !== current) setBlocks(b => renameRef(b, current, next));
   };
@@ -512,9 +503,10 @@ function RoleInput({ blocks, setBlocks, table, current }) {
       <span className="blbl">als</span>
       <input className="binp role-inp" value={draft} spellCheck="false"
              placeholder={needed ? 'Name nötig' : localName(table)}
-             title="Rolle dieser Tabelle in der Abfrage (SQL: AS) — z.B. „absender“. Unter diesem Namen stehen ihre Spalten in Schritt 2."
-             onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+             title="Rolle dieser Tabelle in der Abfrage (SQL: AS) — z.B. „absender“. Unter diesem Namen stehen ihre Spalten in Schritt 3. Jederzeit änderbar: alle Verweise ziehen mit."
+             onChange={(e) => { setDraft(e.target.value); setClash(null); }} onBlur={commit}
              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+      {clash && <span className="bhint role-clash" role="alert">„{clash}“ ist in dieser Abfrage schon vergeben</span>}
     </span>
   );
 }
@@ -545,15 +537,12 @@ function CustomJoin({ blocks, setBlocks, schema, j, i }) {
     const nj = { ...b.joins[i], ...patch, custom: true };
     delete nj.relId; delete nj.label;
     if (patch.rightTable !== undefined) {
-      const others = querySources({ ...b, joins: b.joins.filter((_, y) => y !== i) });
-      delete nj.rightAlias;
-      if (others.some(s => s.table === patch.rightTable)) nj.rightAlias = freeRef(others, patch.rightTable);
       const t = schema.tables.find(x => x.name === patch.rightTable);
       if (!t || !t.columns.some(c => c.name === nj.rightCol)) delete nj.rightCol;
     }
-    if (!nj.leftRef || nj.leftRef === nj.leftTable) delete nj.leftRef;
     if (nj.leftAlt && !nj.leftAlt.length) delete nj.leftAlt;
-    return { ...b, active: { ...b.active, join: true }, joins: b.joins.map((x, y) => y === i ? nj : x) };
+    // Ein vergebener Rollen-Name bleibt, alle Verweise darauf ziehen mit
+    return replaceJoin(b, i, nj);
   });
   const leftKey = j.leftTable && j.leftCol ? joinLeftRef(j) + '|' + j.leftCol : '';
   const alts = j.leftAlt || [];
@@ -767,19 +756,15 @@ function JoinsStep({ blocks, setBlocks, schema, relations, runPreview, counts, s
     setBlocks(b => ({ ...b, joins: b.joins.map((x, y) => y === i ? { ...x, type } : x) }));
   };
   const togglePeek = (i) => setPeek(p => { const n = { ...p }; if (n[i]) delete n[i]; else n[i] = { before: null }; return n; });
-  const setJoin = (i, o) => setBlocks(b => {
-    const joins = [...b.joins];
-    joins[i] = {
-      ...(joins[i] && joins[i].type ? { type: joins[i].type } : {}),
-      relId: o.rel.id,
-      leftTable: o.left.table, leftCol: o.left.col,
-      rightTable: o.right.table, rightCol: o.right.col,
-      ...(o.left.ref !== o.left.table ? { leftRef: o.left.ref } : {}),
-      ...(o.rightAlias ? { rightAlias: o.rightAlias } : {}),
-      label: `${refLabel(o.left.ref, o.left.table)} ⟶ ${refLabel(o.right.ref, o.right.table)}  (${o.left.col} = ${o.right.col})`
-    };
-    return { ...b, active: { ...b.active, join: true }, joins };
-  });
+  // Eine andere Beziehung wählen: ein vergebener Rollen-Name bleibt, alle Verweise darauf ziehen mit
+  const setJoin = (i, o) => setBlocks(b => replaceJoin(b, i, {
+    ...(b.joins[i] && b.joins[i].type ? { type: b.joins[i].type } : {}),
+    relId: o.rel.id,
+    leftTable: o.left.table, leftCol: o.left.col,
+    rightTable: o.right.table, rightCol: o.right.col,
+    leftRef: o.left.ref,
+    label: `${refLabel(o.left.ref, o.left.table)} ⟶ ${refLabel(o.right.ref, o.right.table)}  (${o.left.col} = ${o.right.col})`
+  }));
   const removeJoin = (i) => {
     setPeek({});
     setBlocks(b => {
@@ -1002,12 +987,15 @@ function ColumnPicker({ cols, items, onAdd, onClose }) {
   );
 }
 
-function ResultItem({ it, idx, count, cols, setItem, remove, move, fnPreview, getDistinct }) {
+function ResultItem({ it, idx, count, cols, setItem, remove, move, fnPreview, getDistinct, dnd, dropMark, dragging }) {
   const kindLabel = it.kind === 'case' ? 'Wenn–dann' : it.kind === 'first' ? 'Erster Wert'
     : it.kind === 'value' ? 'Fester Wert' : it.expr !== undefined ? 'Formel' : null;
   return (
-    <div className={'ritem' + (kindLabel ? ' ritem-calc' : '')}>
+    <div className={'ritem' + (kindLabel ? ' ritem-calc' : '') + (dropMark ? ' ritem-drop-' + dropMark : '') + (dragging ? ' ritem-dragging' : '')}
+         onDragOver={dnd.over} onDrop={dnd.drop}>
       <div className="brow ritem-head">
+        <span className="ritem-grip" draggable="true" onDragStart={dnd.start} onDragEnd={dnd.end}
+              title="Ziehen, um die Spalte an eine andere Stelle zu verschieben">⠿</span>
         <span className="ritem-n">{idx + 1}</span>
         {kindLabel ? <span className="ritem-kind">{kindLabel}</span> : <span className="blbl selcol" title={it.col}>{shortCol(it.col)}</span>}
         {it.kind === 'value' && <input className="binp ritem-value" value={it.val} placeholder="leer = NULL, z.B. WhatsApp"
@@ -1058,6 +1046,47 @@ function ResultStep({ blocks, setBlocks, cols, stageCounts, getDistinct, fnPrevi
     const n = [...b.selectCols]; [n[idx], n[idx + d]] = [n[idx + d], n[idx]];
     return { ...b, selectCols: n };
   });
+  // Drag & Drop am Griff ⠿: to = Einfügestelle (0 … Anzahl), die Linie zeigt, wo die Spalte landet
+  const [drag, setDrag] = React.useState(null); // { from, to }
+  const moveTo = (from, to) => setBlocks(b => {
+    const n = [...b.selectCols];
+    const [it] = n.splice(from, 1);
+    n.splice(to > from ? to - 1 : to, 0, it);
+    return { ...b, selectCols: n };
+  });
+  const isItemDrag = (e) => [...e.dataTransfer.types].includes('text/ritem');
+  const dndFor = (idx) => ({
+    start: (e) => {
+      e.dataTransfer.setData('text/ritem', String(idx));
+      e.dataTransfer.effectAllowed = 'move';
+      const card = e.currentTarget.closest('.ritem');
+      if (card) e.dataTransfer.setDragImage(card, 16, 16);
+      setDrag({ from: idx, to: null });
+    },
+    over: (e) => {
+      if (!isItemDrag(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      const r = e.currentTarget.getBoundingClientRect();
+      const to = idx + (e.clientY > r.top + r.height / 2 ? 1 : 0);
+      setDrag(d => (d && d.to !== to ? { ...d, to } : d));
+    },
+    drop: (e) => {
+      if (!isItemDrag(e)) return;
+      e.preventDefault(); e.stopPropagation();
+      const from = drag ? drag.from : Number(e.dataTransfer.getData('text/ritem'));
+      const to = drag && drag.to != null ? drag.to : idx;
+      if (to !== from && to !== from + 1) moveTo(from, to);
+      setDrag(null);
+    },
+    end: () => setDrag(null)
+  });
+  // Markierung nur, wenn sich die Reihenfolge wirklich ändert
+  const dropMark = (idx) => {
+    if (!drag || drag.to == null || drag.to === drag.from || drag.to === drag.from + 1) return null;
+    if (drag.to === idx) return 'before';
+    return drag.to === items.length && idx === items.length - 1 ? 'after' : null;
+  };
   const removeStep = (key) => setBlocks(b => {
     const nb = { ...b, active: { ...b.active, [key]: false } };
     if (key === 'where') nb.wheres = [];
@@ -1107,6 +1136,7 @@ function ResultStep({ blocks, setBlocks, cols, stageCounts, getDistinct, fnPrevi
             {items.map((it, idx) => (
               <ResultItem key={idx} it={it} idx={idx} count={items.length} cols={cols}
                           fnPreview={fnPreview} getDistinct={getDistinct}
+                          dnd={dndFor(idx)} dropMark={dropMark(idx)} dragging={!!drag && drag.from === idx}
                           setItem={(patch) => setItem(idx, patch)} move={(d) => move(idx, d)}
                           remove={() => setBlocks(b => ({ ...b, selectCols: b.selectCols.filter((_, y) => y !== idx) }))} />
             ))}
@@ -1224,8 +1254,9 @@ function QueryBuilder({ blocks, setBlocks, schema, relations, counts, runPreview
       {current === 'result' && (
         <React.Fragment>
           <StepGuide n={3}>
-            Welche Spalten willst du sehen? „+ Spalte“ holt sie aus allen verbundenen Tabellen. Werte zusammenführen: „Wenn–dann“ und
-            „Erster Wert“. Filtern und Sortieren findest du unten bei „Außerdem“ — dann ▶ Ausführen.
+            Welche Spalten willst du sehen? „+ Spalte“ holt sie aus allen verbundenen Tabellen; die Reihenfolge änderst du durch
+            Ziehen am Griff ⠿. Werte zusammenführen: „Wenn–dann“ und „Erster Wert“. Filtern und Sortieren findest du unten bei
+            „Außerdem“ — dann ▶ Ausführen.
           </StepGuide>
           <ResultStep blocks={blocks} setBlocks={setBlocks} cols={cols} stageCounts={stageCounts}
                       getDistinct={getDistinct} fnPreview={fnPreview} />

@@ -132,6 +132,22 @@
 .ritem-head .selcol { flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ritem-ctl { display: inline-flex; gap: 3px; margin-left: auto; }
 .ritem-ctl .bmini:disabled, .firstlist .bmini:disabled { opacity: 0.35; }
+/* Ergebnis-Spalten per Drag & Drop umsortieren: Griff ⠿, Linie zeigt die Einfügestelle */
+.ritem { position: relative; }
+.ritem-grip {
+  flex: none; width: 16px; text-align: center; font-size: 15px; line-height: 20px; color: var(--ink-soft);
+  cursor: grab; user-select: none; border-radius: 4px;
+}
+.ritem-grip:hover { color: var(--ink); background: var(--bg2); }
+.ritem-grip:active { cursor: grabbing; }
+.ritem-dragging { opacity: 0.45; }
+.ritem-drop-before::before, .ritem-drop-after::after {
+  content: ''; position: absolute; left: 4px; right: 4px; height: 3px; border-radius: 3px; background: var(--blue);
+  pointer-events: none;
+}
+.ritem-drop-before::before { top: -6px; }
+.ritem-drop-after::after { bottom: -6px; }
+.role-clash { color: var(--red); margin: 0; font-size: 11px; }
 .case-row { display: flex; flex-direction: column; gap: 5px; }
 .case-kw { font-size: 12px; font-weight: 900; color: var(--purple); min-width: 64px; }
 .case-then { padding-left: 14px; }
@@ -197,10 +213,6 @@
 .qchosen-name { font-weight: 900; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qstart-list { max-height: 260px; }
 .qstart-count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--ink-soft); flex: none; }
-/* Vorschläge statt automatischer Beziehungen */
-.schema-toolbar .suggest-btn { margin-left: auto; }
-.schema-toolbar .suggest-btn + .tpanel { margin-left: 0; }
-.suggest-btn:disabled { opacity: 0.5; cursor: default; }
 /* Live-Vorschau der Join-Art */
 .jprev-toggle {
   flex: none; border: 1.5px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink);
@@ -233,7 +245,10 @@
 .jprev-table tr.jprev-noright, .jprev-table tr.jprev-noleft { background: rgba(245, 184, 46, 0.18); }
 .jprev-null { color: var(--ink-soft); font-style: italic; }
 .jprev-foot { font-size: 10.5px; }
-/* Linien, die in der Abfrage stecken, kräftig; angebotene (Fremdschlüssel, Vorschläge) blass und anklickbar */
+/* Linien, die in der Abfrage stecken, kräftig; Fremdschlüssel aus der Datei gepunktet und anklickbar */
+.rel-offer.rel-fk .rel-line { stroke-dasharray: 0.5 6; stroke-linecap: round; stroke-width: 4; opacity: 0.85; }
+.rel-offer.rel-fk:hover .rel-line { opacity: 1; stroke-width: 5; }
+.rel-fk .rel-end { opacity: 0.85; }
 .rel-offer .rel-line { opacity: 0.4; stroke-width: 2.2; }
 .rel-offer .rel-flow { display: none; }
 .rel-offer .rel-hit { cursor: copy; }
@@ -294,3 +309,6 @@ body[data-theme="dark"] .qtool.qtool-view:not(:disabled) { color: #93B4F8; }
 /* Dateiname vor dem CSV-Export */
 .res-filename { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; font-weight: 700; color: var(--ink-soft); }
 .res-filename .binp { flex: none; width: 150px; height: 28px; font-size: 12px; }
+/* „In Bausteine umwandeln“: .ch-btn (hell) stand später im Stylesheet und machte den Knopf weiß auf weiß */
+.sqled .sqled-tb { background: var(--blue); color: #fff; border-color: var(--line); }
+.sqled .sqled-tb:disabled { opacity: 0.5; }

@@ -96,7 +96,10 @@ const runtime = (id, name) => {
     db.run('ATTACH DATABASE ? AS zwei', [b.filename]);
     ctx.db = db;
     run('var sa = introspect(db, null, "eins"), sb = introspect(db, null, "zwei"); var schema = {tables: [...sa.tables, ...sb.tables]};');
-    assert.equal(run('sa.relations[0].to.table'), 'eins.kunde');
+    assert.equal(run('sa.relations'), undefined, 'foreign keys never become query lines on their own');
+    assert.equal(run("sa.foreignKeys.map(r => r.from.table + '.' + r.from.col + '>' + r.to.table + '.' + r.to.col).join()"),
+      'eins.bestellung.kunde_id>eins.kunde.id', 'declared foreign keys are offered as dotted suggestions');
+    assert.equal(run("sameLink(sa.foreignKeys[0], {from: sa.foreignKeys[0].to, to: sa.foreignKeys[0].from})"), true);
     assert.equal(run('sb.tables[0].name'), 'zwei.kunde');
     run("var legacy = emptyBlocks(); legacy.table='bestellung'; legacy=requalifyColumns(legacy, schema)");
     assert.equal(run('legacy.table'), 'eins.bestellung');
@@ -140,11 +143,9 @@ const runtime = (id, name) => {
       cj.raw_string AS chat, m.text_data FROM zwei.message m JOIN zwei.chat c ON c._id = m.chat_row_id
       JOIN zwei.jid cj ON cj._id = c.jid_row_id LEFT JOIN zwei.jid sj ON sj._id = m.sender_jid_row_id WHERE m.chat_row_id > 0`;
     const expectedMessenger = db.exec(ctx.generated)[0].values;
-    // WhatsApp-Stil ohne Fremdschlüssel: chat_row_id → chat, sender_jid_row_id → jid werden als Beziehung vermutet
-    assert.equal(run('introspect(db, null, "zwei").relations.length'), 0, 'guesses are never drawn automatically');
-    assert.equal(run(`introspect(db, null, "zwei").guesses
-      .map(r => r.from.table.split('.').pop() + '.' + r.from.col + '>' + r.to.table.split('.').pop()).sort().join()`),
-      'chat.jid_row_id>jid,message.chat_row_id>chat,message.sender_jid_row_id>jid');
+    // Ohne hinterlegte Fremdschlüssel keine Vorschläge – nichts wird aus Spaltennamen wie chat_row_id vermutet
+    assert.equal(run('JSON.stringify(Object.keys(introspect(db, null, "zwei")))'), '["tables","foreignKeys"]', 'no automatic relations or guesses');
+    assert.equal(run('introspect(db, null, "zwei").foreignKeys.length'), 0);
     run('var messenger = parseSQLToBlocks(generated, schema)');
     assert.equal(run('messenger.error'), undefined);
     assert.equal(run("messenger.blocks.joins.map(j => j.rightAlias || '-').join()"), 'c,cj,sj', 'own aliases become role names');
@@ -159,6 +160,28 @@ const runtime = (id, name) => {
     ctx.renamedSQL = run('buildQuerySQL(requalifyColumns(renameRef(messenger.blocks, "sj", "absender"), schema))');
     assert.ok(ctx.renamedSQL.includes('zwei.jid AS absender') && !/\bsj\./.test(ctx.renamedSQL), 'rename reaches every reference');
     assert.deepEqual(db.exec(ctx.renamedSQL)[0].values, expectedMessenger);
+    // Vergebene Namen sind tabu, auch der Kurzname einer Tabelle ohne eigenen Namen
+    assert.equal(run("[refTaken(querySources(messenger.blocks), 'SJ'), refTaken(querySources(messenger.blocks), 'neu')].join()"), 'true,false');
+    assert.equal(run("refTaken([{ref:'zwei.jid', table:'zwei.jid'}], 'jid')"), true);
+    // Verbindung nachträglich ändern: der Name bleibt, und was an ihm hängt, zieht mit
+    run(`var named = { ...emptyBlocks(), table: 'zwei.message', active: { ...emptyBlocks().active, join: true, select: true },
+      joins: [{type:'INNER', leftTable:'zwei.message', leftCol:'chat_row_id', rightTable:'zwei.chat', rightCol:'_id', rightAlias:'unterhaltung'},
+              {type:'LEFT', leftTable:'zwei.chat', leftRef:'unterhaltung', leftCol:'jid_row_id', rightTable:'zwei.jid', rightCol:'_id', rightAlias:'partner'}],
+      selectCols: [{col:'unterhaltung._id'}, {col:'partner.raw_string'}] };
+      var swapped = replaceJoin(named, 1, {type:'LEFT', leftTable:'zwei.chat', leftRef:'unterhaltung', leftCol:'jid_row_id', rightTable:'zwei.jid', rightCol:'_id', custom:true});`);
+    assert.equal(run('swapped.joins[1].rightAlias'), 'partner', 'own role name survives a changed join');
+    assert.ok(db.exec(run('buildQuerySQL(requalifyColumns(swapped, schema))')));
+    run(`var retabled = replaceJoin(named, 0, {type:'INNER', leftTable:'zwei.message', leftCol:'_id', rightTable:'zwei.jid', rightCol:'_id', custom:true});`);
+    assert.equal(run('retabled.joins[0].rightAlias + "|" + retabled.joins[1].leftTable + "|" + retabled.joins[1].leftRef'), 'unterhaltung|zwei.jid|unterhaltung',
+      'following joins see the new table behind the same name');
+    run(`var plain = { ...named, joins: [{ ...named.joins[0], rightAlias: undefined }, { ...named.joins[1], leftRef: undefined }], selectCols: [{col:'zwei.chat._id'}] };
+      delete plain.joins[0].rightAlias; delete plain.joins[1].leftRef;
+      var replacedPlain = replaceJoin(plain, 0, {type:'INNER', leftTable:'zwei.message', leftCol:'_id', rightTable:'zwei.jid', rightCol:'_id'});`);
+    assert.equal(run("replacedPlain.joins[1].leftTable + '|' + (replacedPlain.joins[1].leftRef || '-') + '|' + replacedPlain.selectCols[0].col"), 'zwei.jid|jid_2|jid_2._id',
+      'without a name the references move to the new table (jid is already joined, so it gets jid_2)');
+    run(`var twice = { ...named, joins: [named.joins[0], {type:'LEFT', leftTable:'zwei.message', leftCol:'sender_jid_row_id', rightTable:'zwei.chat', rightCol:'_id', rightAlias:'chat_2'}] };`);
+    assert.equal(run("replaceJoin(twice, 1, {type:'LEFT', leftTable:'zwei.message', leftCol:'sender_jid_row_id', rightTable:'zwei.jid', rightCol:'_id'}).joins[1].rightAlias || '-'"), '-',
+      'a generated name like chat_2 is dropped when the table changes');
     // COALESCE mit mehreren Werten → „Erster Wert“, auch als Ergebnis im CASE
     ctx.generated = "SELECT COALESCE(sj.raw_string, cj.raw_string, 'unbekannt') AS wer, CASE WHEN m.text_data IS NULL THEN 'leer' ELSE COALESCE(sj.raw_string, cj.raw_string) END AS x FROM zwei.message m JOIN zwei.chat c ON c._id = m.chat_row_id JOIN zwei.jid cj ON cj._id = c.jid_row_id LEFT JOIN zwei.jid sj ON sj._id = m.sender_jid_row_id";
     const expectedFirst = db.exec(ctx.generated)[0].values;
@@ -172,6 +195,14 @@ const runtime = (id, name) => {
     assert.equal(run("attached.blocks.selectCols.map(x => x.kind || x.fns.map(f => f.fn).join()).join()"), 'msdateutc,unixutc,value');
     // Apple-Zeit (iPhone: Sekunden ab 1.1.2001): richtiger Wert und Rückweg SQL → Baustein
     assert.equal(db.exec('SELECT ' + run("fnExpr('appleutc', '801647260')"))[0].values[0][0], '2026-05-28 07:47:40');
+    // … auch mit vielen Nullen am Ende: Milli-, Mikro-, Nanosekunden, mit Nachkommastellen oder als Text
+    for (const v of ['801647260000', '801647260000000', '801647260000000000', '801647260.5', "'801647260000000000'", '8.0164726e17']) {
+      assert.equal(db.exec('SELECT ' + run(`fnExpr('appleutc', ${JSON.stringify(v)})`))[0].values[0][0], '2026-05-28 07:47:40', 'Apple-Zeit ' + v);
+    }
+    assert.equal(db.exec('SELECT ' + run("fnExpr('appleutc', 'NULL')"))[0].values[0][0], null);
+    ctx.appleSQL = `SELECT ${run("fnExpr('appledate', 'm._id')")} AS a, ${run("fnExpr('appleutc', 'upper(m.text_data)')")} AS b FROM zwei.message m`;
+    assert.equal(run("parseSQLToBlocks(appleSQL, schema).blocks.selectCols.map(x => x.fns.map(f => f.fn).join()).join('|')"),
+      'appledate|upper,appleutc', 'Apple-Zeit mit Einheiten-Erkennung wird wieder zum Baustein');
     assert.equal(run("parseSQLToBlocks(\"SELECT datetime(m._id + 978307200, 'unixepoch', 'localtime') AS a, datetime(m._id+978307200,'unixepoch') AS b FROM zwei.message m\", schema).blocks.selectCols.map(x => x.fns.map(f => f.fn).join()).join()"),
       'appledate,appleutc', 'Apple-Zeit wird nicht als Unix-Zeit missverstanden');
     // Spaltensuche: alle Wörter, ohne Groß/klein; leere Suche passt immer
@@ -321,7 +352,7 @@ const runtime = (id, name) => {
     ws.run('ATTACH DATABASE ? AS wa', [wa.filename]);
     assert.equal(run("withWorkspaceObjects(ws, wsSchema.tables).some(t => t.name === 'temp.personen')"), true);
     ws.run('DETACH DATABASE msgstore'); ws.run('DETACH DATABASE wa'); ms.close(); wa.close(); ws.close();
-    console.log('PASS: bundle syntax, stable layouts, resized-card spacing, fit/scroll geometry, re-shown card placement, namespace isolation, foreign keys, all JOIN types, stages, WHERE/GROUP/ORDER, SQL roundtrip, aliases + self-joins + CASE + ATTACH + UTC + fixed values, quoted names, targeted modifications, detach, views (TEMP VIEW over two databases, replace, two roles, broken views).');
+    console.log('PASS: bundle syntax, stable layouts, resized-card spacing, fit/scroll geometry, re-shown card placement, namespace isolation, foreign keys as dotted suggestions only, all JOIN types, stages, WHERE/GROUP/ORDER, SQL roundtrip, aliases + self-joins + CASE + ATTACH + UTC + Apple time units + fixed values, renaming roles and changing named joins, quoted names, targeted modifications, detach, views (TEMP VIEW over two databases, replace, two roles, broken views).');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

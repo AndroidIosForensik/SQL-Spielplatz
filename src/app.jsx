@@ -58,7 +58,9 @@ function introspect(db, layout, namespace) {
       tables.push(views.has(name) ? { name, columns, x: pos.x, y: pos.y, view: true, sql: views.get(name) } : { name, columns, x: pos.x, y: pos.y });
     } catch (e) { /* Tabelle nicht lesbar (z.B. Ansicht auf eine geschlossene Datenbank) → überspringen */ }
   });
-  const relations = [];
+  // In der Datei hinterlegte Fremdschlüssel (REFERENCES …) – nur als Vorschlag, gepunktet im Diagramm.
+  // Vermutungen aus Spaltennamen gibt es bewusst nicht.
+  const foreignKeys = [];
   tables.filter(t => !t.view).forEach(({ name }) => {
     try {
       const fk = db.exec(`PRAGMA ${ns}.foreign_key_list(${aliasSQL(name)})`);
@@ -70,51 +72,23 @@ function introspect(db, layout, namespace) {
           const pk = rt && rt.columns.find(c => c.pk);
           to = pk ? pk.name : 'id';
         }
-        relations.push({
-          id: 'fk_' + name + '_' + from,
-          from: { table: name, col: from },
-          to: { table: refTable, col: to },
-          auto: true
-        });
+        if (tables.some(t => t.name === refTable)) {
+          foreignKeys.push({ id: 'fk_' + name + '_' + from, from: { table: name, col: from }, to: { table: refTable, col: to } });
+        }
       });
     } catch (e) { /* kein FK lesbar */ }
   });
-
-  // Heuristik: Spalten wie thread_id → Tabelle thread (für DBs ohne deklarierte Fremdschlüssel,
-  // z.B. Messenger-Datenbanken von Handys). Nur Vorschläge – eingezeichnet wird erst auf Knopfdruck.
-  const guesses = [];
-  const havePair = (a, b) => [...relations, ...guesses].some(r =>
-    (r.from.table === a.table && r.from.col === a.col && r.to.table === b.table && r.to.col === b.col) ||
-    (r.from.table === b.table && r.from.col === b.col && r.to.table === a.table && r.to.col === a.col));
-  tables.forEach(tb => {
-    tb.columns.forEach(c => {
-      // auch WhatsApp-Stil: chat_row_id → chat, sender_jid_row_id → jid
-      const m = c.name.match(/^(.+?)(?:_row)?_ids?$/i);
-      if (!m) return;
-      const bases = [...new Set([m[1].toLowerCase(), m[1].toLowerCase().split('_').pop()])];
-      const cand = bases.flatMap(base => [base, base + 's', base + 'en', base + 'n', base.replace(/s$/, '')]);
-      const target = tables.find(x => x.name !== tb.name && cand.includes(x.name.toLowerCase()));
-      if (!target) return;
-      const pk = target.columns.find(x => x.pk) || target.columns.find(x => /^_?id$/i.test(x.name));
-      if (!pk) return;
-      const from = { table: tb.name, col: c.name }, to = { table: target.name, col: pk.name };
-      if (!havePair(from, to)) {
-        guesses.push({ id: 'guess_' + tb.name + '_' + c.name, from, to, auto: 'guess' });
-      }
-    });
-  });
-
   const qualified = name => ns + '.' + aliasSQL(name);
   return {
     tables: tables.map(t => ({ ...t, name: qualified(t.name), database: namespace, localName: t.name })),
-    relations: relations.map(qualifyRel),
-    guesses: guesses.map(qualifyRel)
+    foreignKeys: foreignKeys.map(r => ({ ...r, id: namespace + '_' + r.id,
+      from: { ...r.from, table: qualified(r.from.table) }, to: { ...r.to, table: qualified(r.to.table) } }))
   };
-  function qualifyRel(r) {
-    return { ...r, id: namespace + '_' + r.id,
-      from: { ...r.from, table: qualified(r.from.table) },
-      to: { ...r.to, table: qualified(r.to.table) } };
-  }
+}
+// Gleiche Spalten an beiden Enden (Richtung egal)?
+function sameLink(a, b) {
+  return (a.from.table === b.from.table && a.from.col === b.from.col && a.to.table === b.to.table && a.to.col === b.to.col) ||
+    (a.from.table === b.to.table && a.from.col === b.to.col && a.to.table === b.from.table && a.to.col === b.from.col);
 }
 
 // Eigene Tabellen und Ansichten des Arbeitsbereichs (z.B. CREATE TEMP VIEW personen …) neu einlesen.
@@ -188,9 +162,11 @@ function App() {
   const [chSetKey, setChSetKey] = React.useState('plauder'); // welches Aufgaben-Set?
   const [schema, setSchema] = React.useState({ tables: [] });
   const [relations, setRelations] = React.useState([]);
-  const [suggestions, setSuggestions] = React.useState([]); // vermutete Beziehungen, nur auf Knopfdruck eingezeichnet
   const relationsRef = React.useRef([]);
   relationsRef.current = relations;
+  // Fremdschlüssel aus den Dateien: gepunktete Vorschläge; ✕ blendet einen für diese Sitzung aus
+  const [foreignKeys, setForeignKeys] = React.useState([]);
+  const [dismissedFks, setDismissedFks] = React.useState(new Set());
   const [counts, setCounts] = React.useState({});
   const [hidden, setHidden] = React.useState(new Set());
   // Selbst gewähltes Aus-/Einblenden bleibt auch nach Neuladen erhalten: {tabelle: true = ausgeblendet}
@@ -318,9 +294,8 @@ function App() {
     setDb(workspace);
     setHidden(h => new Set([...h, ...hid]));
     // Eigene Ansichten, die auf diese Datenbank warten, werden jetzt wieder lesbar
-    syncWorkspace(next, { tables: withWorkspaceObjects(workspace, [...oldTables, ...s.tables]), relations: [...relationsRef.current, ...s.relations] });
-    relationsRef.current = [...relationsRef.current, ...s.relations];
-    setSuggestions(g => [...g, ...s.guesses]);
+    syncWorkspace(next, { tables: withWorkspaceObjects(workspace, [...oldTables, ...s.tables]), relations: relationsRef.current });
+    setForeignKeys(fks => [...fks, ...s.foreignKeys]);
     setLoadErr(null);
     if (sources.length) setNotice('✓ „' + name + '“ als ' + alias + ' hinzugefügt. Tabellen über ihre Spaltenpunkte verbinden und im JOIN-Baustein auswählen.');
   };
@@ -339,7 +314,7 @@ function App() {
       relationsRef.current = keptRelations;
       syncWorkspace(databaseRef.current.filter(d => d !== entry), { tables, relations: keptRelations });
       setHidden(h => new Set([...h].filter(n => !removed.has(n))));
-      setSuggestions(g => g.filter(r => !removed.has(r.from.table) && !removed.has(r.to.table)));
+      setForeignKeys(fks => fks.filter(r => !removed.has(r.from.table) && !removed.has(r.to.table)));
       setPreviews(ps => ps.filter(p => !removed.has(p.table)));
       const affected = [blocks.table, ...blocks.joins.flatMap(j => [j.leftTable, j.rightTable])].some(t => removed.has(t));
       if (affected) setBlocksRaw(emptyBlocks());
@@ -364,7 +339,6 @@ function App() {
     if (removed.size) {
       relationsRef.current = relationsRef.current.filter(r => !removed.has(r.from.table) && !removed.has(r.to.table));
       setRelations(relationsRef.current);
-      setSuggestions(g => g.filter(r => !removed.has(r.from.table) && !removed.has(r.to.table)));
       setPreviews(ps => ps.filter(p => !removed.has(p.table)));
       setBlocksRaw(b => [b.table, ...b.joins.flatMap(j => [j.leftTable, j.rightTable])].some(n => removed.has(n)) ? emptyBlocks() : b);
       removed.forEach(n => { delete hiddenChoice.current[n]; });
@@ -690,7 +664,7 @@ function App() {
     const dup = relations.find(r =>
       (r.from.table === from.table && r.from.col === from.col && r.to.table === to.table && r.to.col === to.col) ||
       (r.from.table === to.table && r.from.col === to.col && r.to.table === from.table && r.to.col === from.col));
-    const rel = dup || { id: 'rel_' + Date.now(), from, to, auto: false };
+    const rel = dup || { id: 'rel_' + Date.now(), from, to };
     // Die aufgezogene Linie wird direkt zum JOIN – lässt sie sich nicht an die Abfrage hängen,
     // bleibt sie auch nicht stehen (Linien und Verbindungen bleiben deckungsgleich).
     const res = joinForRelation(blocks, rel, from.table);
@@ -699,32 +673,15 @@ function App() {
     if (res.message) { setError(null); setNotice(res.message); }
     return res.ok && !dup ? rel.id : null;
   };
-  // Klick auf eine Linie, die noch nicht in der Abfrage steckt (z.B. Fremdschlüssel/Vorschlag) → als JOIN übernehmen
-  const pickRelation = (id) => {
-    const rel = relations.find(r => r.id === id);
-    if (!rel) return;
-    const res = joinForRelation(blocks, rel, rel.from.table);
-    if (res.blocks !== blocks) { setBlocks(res.blocks); setSqlMode(false); setTab('build'); }
-    if (res.message) { setError(null); setNotice(res.message); }
-  };
   // Rechts ↔ links: jede Verbindung im Bau-Bereich hat ihre Linie, selbst gezogene Linien nur mit Verbindung
   React.useEffect(() => {
     const res = syncJoinLines(blocks, relations, n => 'rel_' + Date.now() + '_' + n);
     if (res.relations) setRelations(res.relations);
     if (res.joins) setBlocksRaw(b => (b === blocks ? { ...b, joins: res.joins } : b));
   }, [blocks, relations]);
-  // Vorschläge (z.B. chat_row_id → chat) für die sichtbaren Tabellen einzeichnen – nie automatisch
-  const drawn = (g) => relations.some(r => r.id === g.id ||
-    (r.from.table === g.from.table && r.from.col === g.from.col && r.to.table === g.to.table && r.to.col === g.to.col) ||
-    (r.from.table === g.to.table && r.from.col === g.to.col && r.to.table === g.from.table && r.to.col === g.from.col));
-  const openSuggestions = suggestions.filter(g => !hidden.has(g.from.table) && !hidden.has(g.to.table) && !drawn(g));
-  const drawSuggestions = () => {
-    if (!openSuggestions.length) return;
-    setRelations(rs => [...rs, ...openSuggestions]);
-    setError(null);
-    setNotice('✓ ' + openSuggestions.length + (openSuggestions.length === 1 ? ' vermutete Beziehung' : ' vermutete Beziehungen') +
-      ' eingezeichnet (gestrichelt, „auto?“). Das ✕ auf einer Linie entfernt sie wieder.');
-  };
+  // Gepunkteten Vorschlag (Fremdschlüssel) anklicken → wird zur Verbindung, wie eine selbst gezogene Linie
+  const pickForeignKey = (fk) => addRelation(fk.from, fk.to);
+  const dismissForeignKey = (id) => setDismissedFks(d => new Set([...d, id]));
   const removeRelation = (id) => {
     setRelations(rs => rs.filter(r => r.id !== id));
     setBlocks(b => ({ ...b, joins: b.joins.filter(j => j.relId !== id) }));
@@ -747,9 +704,13 @@ function App() {
   const visTables = schema.tables.filter(tb => !hidden.has(tb.name));
   const visSchema = { tables: visTables };
   const visRelations = relations.filter(r => !hidden.has(r.from.table) && !hidden.has(r.to.table));
+  const visForeignKeys = foreignKeys.filter(fk => !dismissedFks.has(fk.id) && !hidden.has(fk.from.table) && !hidden.has(fk.to.table) &&
+    !relations.some(r => sameLink(r, fk)));
   const usable = name => !hidden.has(name) || activeTables.includes(name);
   const blockSchema = { tables: schema.tables.filter(tb => usable(tb.name)) };
-  const blockRelations = relations.filter(r => usable(r.from.table) && usable(r.to.table));
+  // Schritt 2 bietet auch die Fremdschlüssel als Beziehung an
+  const blockRelations = [...relations, ...foreignKeys.filter(fk => !dismissedFks.has(fk.id) && !relations.some(r => sameLink(r, fk)))]
+    .filter(r => usable(r.from.table) && usable(r.to.table));
   const relayout = (positions) => {
     setSchema(s => ({ ...s, tables: s.tables.map(tb => positions[tb.name] ? { ...tb, ...positions[tb.name] } : tb) }));
   };
@@ -833,21 +794,15 @@ function App() {
             activeTables={activeTables}
             lineStyle={t.linien === 'Gerade' ? 'ortho' : 'curve'}
             onMoveTable={moveTable} onAddRelation={addRelation}
-            onRemoveRelation={removeRelation} onPickRelation={pickRelation}
+            onRemoveRelation={removeRelation}
+            suggestions={visForeignKeys} onPickSuggestion={pickForeignKey} onDismissSuggestion={dismissForeignKey}
             queryRelIds={(blocks.active.join ? blocks.joins : []).map(j => j.relId).filter(Boolean)}
             onPickTable={(name) => { setBlocks({ ...emptyBlocks(), table: name }); setTab('build'); }}
             onPreview={openPreview} onResizeTable={resizeTable} onRelayout={relayout}
             onSetHidden={setManyHidden} layoutKey={schema.tables.filter(tb => !tb.workspace).map(tb => tb.name).join('\0')}
             flashTable={flashTable} runningJoin={runningJoinIds}
-            tableControls={arrange => <React.Fragment>
-              <button className="layout-btn suggest-btn" disabled={!openSuggestions.length} onClick={drawSuggestions}
-                      title={openSuggestions.length ? 'Beziehungen aus Spaltennamen wie chat_row_id → chat vermuten und einzeichnen'
-                                                    : 'Keine weiteren Vorschläge für die sichtbaren Tabellen'}>
-                ✨ Beziehungen vorschlagen{openSuggestions.length ? ' (' + openSuggestions.length + ')' : ''}
-              </button>
-              <TablesPanel tables={schema.tables} counts={counts} hidden={hidden}
-              onToggle={toggleHidden} onSetMany={setManyHidden} onShowAll={() => setManyHidden([...hidden], false)} onRelayout={arrange} />
-            </React.Fragment>}
+            tableControls={arrange => <TablesPanel tables={schema.tables} counts={counts} hidden={hidden}
+              onToggle={toggleHidden} onSetMany={setManyHidden} onShowAll={() => setManyHidden([...hidden], false)} onRelayout={arrange} />}
           >
           {previews.map(p => (
             <TablePreviewWindow key={p.table} p={p} onClose={closePreview}

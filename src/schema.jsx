@@ -157,7 +157,7 @@ function relPath(a, b, style) {
 
 function SchemaCanvas({
   schema, relations, counts, activeTables, lineStyle,
-  onMoveTable, onAddRelation, onRemoveRelation, onPickRelation, queryRelIds, onPickTable, onPreview, onResizeTable, onRelayout,
+  onMoveTable, onAddRelation, onRemoveRelation, queryRelIds, suggestions, onPickSuggestion, onDismissSuggestion, onPickTable, onPreview, onResizeTable, onRelayout,
   onSetHidden, layoutKey, flashTable, runningJoin, tableControls, children
 }) {
   const ref = React.useRef(null);
@@ -394,6 +394,31 @@ function SchemaCanvas({
         <div className="canvas-zoomwrap" style={{ width: canvasW * zoom, height: canvasH * zoom }}>
           <div className="canvas-inner" style={{ width: canvasW, height: canvasH, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
         <svg className="rel-layer" width={canvasW} height={canvasH}>
+          {/* Fremdschlüssel aus der Datei: gepunktet, nur ein Vorschlag – Klick übernimmt ihn als Verbindung */}
+          {(suggestions || []).map(rel => {
+            const ep = relEndpoints(rel, schema.tables, scrollOffsets);
+            if (!ep) return null;
+            const d = relPath(ep.a, ep.b, lineStyle);
+            const mid = { x: (ep.a.x + ep.b.x) / 2, y: (ep.a.y + ep.b.y) / 2 };
+            const end = e => unquoteIdent(splitIdent(e.table).pop()) + '.' + e.col;
+            return (
+              <g key={rel.id} className="rel rel-offer rel-fk">
+                <path className="rel-hit" d={d} onClick={() => onPickSuggestion && onPickSuggestion(rel)}>
+                  <title>{'In der Datei hinterlegt: ' + end(rel.from) + ' → ' + end(rel.to) + ' — Klicken übernimmt die Verbindung in die Abfrage'}</title>
+                </path>
+                <path className="rel-line" d={d} />
+                <circle cx={ep.a.x} cy={ep.a.y} r="4" className="rel-end" />
+                <circle cx={ep.b.x} cy={ep.b.y} r="4" className="rel-end" />
+                <g className="rel-del" transform={`translate(${mid.x},${mid.y})`}
+                   onClick={() => onDismissSuggestion && onDismissSuggestion(rel.id)}>
+                  <title>Vorschlag ausblenden</title>
+                  <circle r="11" />
+                  <line x1="-4" y1="-4" x2="4" y2="4" />
+                  <line x1="4" y1="-4" x2="-4" y2="4" />
+                </g>
+              </g>
+            );
+          })}
           {relations.map(rel => {
             const ep = relEndpoints(rel, schema.tables, scrollOffsets);
             if (!ep) return null;
@@ -402,10 +427,10 @@ function SchemaCanvas({
             const hot = runningJoin && runningJoin.includes(rel.id);
             const inQuery = (queryRelIds || []).includes(rel.id);
             return (
-              <g key={rel.id} className={'rel' + (rel.id === newRelId ? ' rel-new' : '') + (hot ? ' rel-hot' : '') + (rel.auto === 'guess' ? ' rel-guess' : '') +
+              <g key={rel.id} className={'rel' + (rel.id === newRelId ? ' rel-new' : '') + (hot ? ' rel-hot' : '') +
                                          (inQuery ? ' rel-query' : ' rel-offer')}>
-                <path className="rel-hit" d={d} onClick={() => !inQuery && onPickRelation && onPickRelation(rel.id)}>
-                  <title>{inQuery ? 'Diese Verbindung steckt in der Abfrage (Schritt 2)' : 'Klicken: als Verbindung in die Abfrage übernehmen'}</title>
+                <path className="rel-hit" d={d}>
+                  <title>Diese Verbindung steckt in der Abfrage (Schritt 2) — ✕ entfernt sie</title>
                 </path>
                 <path className="rel-line" d={d} />
                 <path className="rel-flow" d={d} />
@@ -417,12 +442,6 @@ function SchemaCanvas({
                   <line x1="-4" y1="-4" x2="4" y2="4" />
                   <line x1="4" y1="-4" x2="-4" y2="4" />
                 </g>
-                {rel.auto && (
-                  <g className="rel-badge" transform={`translate(${mid.x},${mid.y - 20})`}>
-                    <rect x="-26" y="-9" width="52" height="18" rx="9" />
-                    <text y="4">{rel.auto === 'guess' ? 'auto?' : 'auto'}</text>
-                  </g>
-                )}
               </g>
             );
           })}

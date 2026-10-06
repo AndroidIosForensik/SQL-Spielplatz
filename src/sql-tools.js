@@ -143,6 +143,11 @@ const FN_CATS = {
   profi: { key: 'profi', label: 'Profi', color: '#8B5CF6' }
 };
 
+// Apple-Zeit gibt es in Sekunden (7.9e8), Millisekunden (7.9e11), Mikrosekunden (7.9e14) und
+// Nanosekunden (7.9e17, z.B. iMessage). Die Größe der Zahl verrät die Einheit → immer Sekunden ab 2001.
+const APPLE_SECONDS = 'CASE WHEN abs({c}) >= 1e17 THEN {c} / 1e9 WHEN abs({c}) >= 1e14 THEN {c} / 1e6' +
+  ' WHEN abs({c}) >= 1e11 THEN {c} / 1e3 ELSE {c} END';
+
 // ret: 'text' | 'num' — wichtig fürs richtige Quoten von Vergleichswerten
 const FN_DEFS = {
   upper:   { key: 'upper', label: 'UPPER', name: 'GROSSBUCHSTABEN', cat: 'text', ret: 'text', tpl: 'UPPER({c})',
@@ -179,10 +184,10 @@ const FN_DEFS = {
              desc: 'Wandelt Unix-Zeitstempel (Sekunden, auch aus längeren Werten) in lokales Datum + Uhrzeit — wie bei Telegram-Backups.' },
   unixutc: { key: 'unixutc', label: 'UNIX→UTC', name: 'Unix-Sekunden lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime({c}, 'unixepoch')",
              desc: 'Unix-Zeitstempel in Sekunden als Datum + Uhrzeit in UTC.' },
-  appledate:{ key: 'appledate', label: 'APPLE→DATUM', name: 'Apple-Zeit lesbar', cat: 'datum', ret: 'text', tpl: "datetime({c} + 978307200, 'unixepoch', 'localtime')",
-             desc: 'iPhone-Datenbanken (z. B. WhatsApp ChatStorage.sqlite) zählen Sekunden ab dem 1.1.2001 statt 1970. +978307200 Sekunden rückt den Nullpunkt auf 1970 — danach wie Unix-Zeit, in lokaler Zeit.' },
-  appleutc:{ key: 'appleutc', label: 'APPLE→UTC', name: 'Apple-Zeit lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime({c} + 978307200, 'unixepoch')",
-             desc: 'Wie APPLE→DATUM, aber in UTC statt Ortszeit — üblich in Forensik-Berichten.' },
+  appledate:{ key: 'appledate', label: 'APPLE→DATUM', name: 'Apple-Zeit lesbar', cat: 'datum', ret: 'text', tpl: "datetime(" + APPLE_SECONDS + " + 978307200, 'unixepoch', 'localtime')",
+             desc: 'iPhone-Datenbanken (z. B. WhatsApp ChatStorage.sqlite, iMessage sms.db) zählen ab dem 1.1.2001 statt 1970 — in Sekunden, Millisekunden, Mikro- oder Nanosekunden (lange Zahlen mit vielen Nullen am Ende). Die Einheit wird an der Größe der Zahl erkannt; +978307200 Sekunden rückt den Nullpunkt auf 1970. In lokaler Zeit.' },
+  appleutc:{ key: 'appleutc', label: 'APPLE→UTC', name: 'Apple-Zeit lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime(" + APPLE_SECONDS + " + 978307200, 'unixepoch')",
+             desc: 'Wie APPLE→DATUM (Sekunden, Milli-, Mikro- oder Nanosekunden ab 1.1.2001), aber in UTC statt Ortszeit — üblich in Forensik-Berichten.' },
   datede:  { key: 'datede', label: 'TT.MM.JJJJ', name: 'deutsches Datum', cat: 'datum', ret: 'text', tpl: "strftime('%d.%m.%Y', {c})",
              desc: 'Formatiert ein Datum deutsch: aus 2026-05-30 wird 30.05.2026.' },
   uhrzeit: { key: 'uhrzeit', label: 'HH:MM:SS', name: 'Uhrzeit', cat: 'datum', ret: 'text', tpl: "strftime('%H:%M:%S', {c})",
@@ -552,8 +557,8 @@ function joinForRelation(blocks, rel, startTable) {
 }
 
 // Rechts ↔ links abgleichen: Jede fertige Verbindung im Bau-Bereich bekommt ihre Linie im Diagramm
-// (vorhandene Linie mit denselben Spalten oder eine neue), und selbst gezogene Linien (auto: false)
-// bleiben nur, solange eine Verbindung sie nutzt. Gibt { joins, relations } zurück – unverändert, wenn alles passt.
+// (vorhandene Linie mit denselben Spalten oder eine neue), und Linien bleiben nur, solange eine
+// Verbindung sie nutzt. Gibt { joins, relations } zurück – unverändert, wenn alles passt.
 function syncJoinLines(blocks, relations, newId) {
   const joins = blocks.active.join ? blocks.joins : [];
   const same = (r, j) =>
@@ -568,13 +573,13 @@ function syncJoinLines(blocks, relations, newId) {
     if (cur && same(cur, j)) return j;
     let r = rels.find(x => same(x, j));
     if (!r) {
-      r = { id: newId(n++), from: { table: j.leftTable, col: j.leftCol }, to: { table: j.rightTable, col: j.rightCol }, auto: false };
+      r = { id: newId(n++), from: { table: j.leftTable, col: j.leftCol }, to: { table: j.rightTable, col: j.rightCol } };
       rels = [...rels, r];
     }
     return { ...j, relId: r.id };
   });
   const used = new Set(nextJoins.map(j => j.relId).filter(Boolean));
-  const kept = rels.filter(r => r.auto !== false || used.has(r.id));
+  const kept = rels.filter(r => used.has(r.id));
   const joinsChanged = nextJoins.some((j, k) => j !== joins[k]);
   return { joins: joinsChanged ? nextJoins : null, relations: kept.length !== relations.length || rels !== relations ? kept : null };
 }
@@ -610,6 +615,62 @@ function renameRef(blocks, from, to) {
     orderBy: blocks.orderBy.map(o => ({ ...o, col: col(o.col) }))
   };
   if (!b.tableAlias) delete b.tableAlias;
+  return b;
+}
+
+// Rollen-Namen: nur Buchstaben, Ziffern, _ (Umlaute werden umgeschrieben), eindeutig in der Abfrage
+function cleanRef(raw) {
+  let s = String(raw || '').trim().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+    .replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ß/g, 'ss').replace(/\W+/g, '_');
+  if (s && (!/^[A-Za-z_]/.test(s) || ALIAS_RESERVED.test(s))) s = 't_' + s;
+  return s;
+}
+function localName(table) { return unquoteIdent(splitIdent(table || '').pop() || ''); }
+function freeRef(sources, table) {
+  const base = cleanRef(localName(table)) || 'tabelle';
+  let n = 2;
+  while (sources.some(s => s.ref === base + '_' + n)) n++;
+  return base + '_' + n;
+}
+// Ist der Name in der Abfrage schon vergeben – als Rolle, als Tabelle oder als Kurzname einer Tabelle ohne Rolle?
+function refTaken(sources, name) {
+  const n = String(name).toLowerCase();
+  return sources.some(s => s.ref.toLowerCase() === n || s.table.toLowerCase() === n ||
+    (s.ref === s.table && localName(s.table).toLowerCase() === n));
+}
+
+// Verbindung i nachträglich ändern (andere Beziehung, Tabelle oder Spalten): Ein selbst vergebener
+// Rollen-Name bleibt erhalten, und alles, was diese Rolle verwendet – Spalten, Filter, Sortierung und
+// Verbindungen, die an ihr hängen – zieht mit. So entstehen keine Verweise ins Leere.
+function replaceJoin(blocks, i, nj) {
+  const old = blocks.joins[i] || {};
+  const oldRef = old.rightTable ? joinRightRef(old) : null;
+  // Spätere Verbindungen nennen die alte Rolle noch auf ihrer linken Seite – die zählt nicht als belegt
+  const others = querySources({ ...blocks, joins: blocks.joins.filter((_, y) => y !== i) }).filter(s => s.ref !== oldRef);
+  nj = { ...nj };
+  delete nj.rightAlias;
+  if (nj.rightTable) {
+    const given = old.rightTable && old.rightAlias;
+    // „nutzer_2“ & Co. hat die App selbst vergeben – bei einer anderen Tabelle passt so ein Name nicht mehr
+    const generated = given && new RegExp('^' + cleanRef(localName(old.rightTable)) + '_\\d+$').test(given);
+    if (given && (nj.rightTable === old.rightTable || !generated) && !refTaken(others, given)) nj.rightAlias = given;
+    else if (others.some(s => s.table === nj.rightTable || s.ref === nj.rightTable)) nj.rightAlias = freeRef(others, nj.rightTable);
+  }
+  if (!nj.leftRef || nj.leftRef === nj.leftTable) delete nj.leftRef;
+  let b = { ...blocks, active: { ...blocks.active, join: true }, joins: blocks.joins.map((x, y) => y === i ? nj : x) };
+  const newRef = nj.rightTable ? joinRightRef(nj) : null;
+  if (oldRef && newRef && oldRef !== newRef) b = renameRef(b, oldRef, newRef);
+  // Hängen spätere Verbindungen an dieser Rolle, steht dort jetzt die neue Tabelle
+  if (newRef && old.rightTable && nj.rightTable !== old.rightTable) {
+    const retable = (ref, table) => ref === newRef ? nj.rightTable : table;
+    b.joins = b.joins.map((x, y) => {
+      if (y <= i) return x;
+      const nx = { ...x, leftTable: retable(joinLeftRef(x), x.leftTable) };
+      if (nx.leftRef === nx.leftTable) delete nx.leftRef;
+      if (x.leftAlt) nx.leftAlt = x.leftAlt.map(a => ({ ...a, table: retable(a.ref, a.table) }));
+      return nx;
+    });
+  }
   return b;
 }
 
@@ -761,7 +822,7 @@ function highlightSQL(sql) {
 Object.assign(window, {
   BLOCK_DEFS, PIPELINE_ORDER, OPERATORS, AGG_FNS, FN_CATS, FN_DEFS,
   JOIN_TYPES, joinType, joinComplete, joinSQL, joinLeftAlt, joinLeftExpr, joinLeftRef, joinRightRef, refLabel, fromSQL, querySources, queryTables, sourceTable, joinKeeps, joinExplain, joinTypeLabel,
-  CASE_OPERATORS, operandReady, operandSQL, caseSQL, selectItemReady, renameRef, joinForRelation, syncJoinLines, joinPreviewSQL,
+  CASE_OPERATORS, operandReady, operandSQL, caseSQL, selectItemReady, renameRef, cleanRef, localName, freeRef, refTaken, replaceJoin, joinForRelation, syncJoinLines, joinPreviewSQL,
   emptyBlocks, quoteVal, isNum, tablesInQuery, availableColumns, requalifyColumns,
   aggAlias, aggExpr, aggDisplayAlias, groupDisplayAlias,
   colMatches, aliasSQL, quoteIdent, userAlias, autoSelectAlias, resultAliases, fnExpr, fnAlias, normFns, chainExpr, chainAlias, chainRet,

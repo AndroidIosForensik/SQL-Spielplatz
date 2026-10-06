@@ -1,78 +1,167 @@
 # SQL Spielplatz
 
-Eine verspielte Lernumgebung für SQL — als **eine einzige HTML-Datei**, die offline im Browser läuft. Kein Server, keine Installation, keine Datenübertragung: Doppelklick auf `SQL Spielplatz.html` genügt.
+**Datenbanken verstehen und auswerten – ohne SQL auswendig zu können.**
 
-## Was drin ist
+Der SQL Spielplatz öffnet SQLite-Datenbanken (z. B. aus Handy-Backups wie WhatsApp oder iPhone-Apps), Excel- und CSV-Dateien und zeigt sie als übersichtliches Diagramm. Abfragen klickst du in drei Schritten zusammen – das passende SQL schreibt sich dabei live mit. So lernst du SQL nebenbei, und wer es schon kann, schreibt es einfach selbst.
 
-- **Geführt in drei Schritten** — **1 Start-Tabelle** (durchsuchbare Liste mit Zeilenzahlen oder Doppelklick auf eine Karte), **2 Verbinden** (Linie im Diagramm ziehen oder „+ Tabelle verbinden“, jede Tabelle mit optionalem Rollen-Namen wie `absender`), **3 Spalten** (Ergebnis-Spalten als geordnete Liste, darunter bei Bedarf Filtern, Gruppieren, Sortieren, Begrenzen). Jeder Schritt sagt, was jetzt zu tun ist; ist er erledigt, geht es von selbst weiter, erledigte Schritte tragen einen Haken. Das SQL schreibt sich live mit.
-- **Ausführungs-Reihenfolge sichtbar** — beim Ausführen zeigt eine Leiste, in welcher Reihenfolge SQL wirklich arbeitet (erst FROM, zuletzt LIMIT) und wie viele Zeilen nach jeder Stufe übrig bleiben.
-- **Verbinden ohne Linien** — gibt es keine passende Beziehung (z. B. `wa_contacts.jid = jid.raw_string` über zwei Datenbanken), wählt man in Schritt 2 „Tabelle und Spalten selbst wählen“. Automatisch eingezeichnet werden nur Fremdschlüssel, die in der Datenbank selbst hinterlegt sind. Vermutete Beziehungen aus Spaltennamen wie `chat_row_id` oder `sender_jid_row_id` (WhatsApp-Stil) zeichnet erst der Knopf **✨ Beziehungen vorschlagen** über dem Diagramm ein.
-- **Wenn–dann, Erster Wert, Fester Wert** — CASE und COALESCE lassen sich zusammenklicken: pro Fall „wenn Spalte = Wert → Ergebnis“ plus „sonst“, bzw. eine sortierbare Liste „nimm den ersten vorhandenen Wert“ (z. B. Adressbuch-Name, WhatsApp-Name, sonst Nummer). Ein fester Wert wie `'WhatsApp' AS messenger` steht in jeder Zeile gleich.
-- **Schema-Diagramm** — Tabellen als Karten zum Verschieben, Beziehungen als Linien; Spalten lassen sich von dort direkt in die Bausteine ziehen.
-- **Spalten finden** — jede Tabellenkarte hat unten ein Suchfeld: Treffer werden hervorgehoben, der Rest abgeblendet, die Karte scrollt zum Treffer (Enter springt weiter, Esc leert). In der Daten-Vorschau (▤, die ersten 100 Zeilen) blendet das Suchfeld alle anderen Spalten aus. Mehrere Wörter grenzen weiter ein.
-- **Join-Arten mit Live-Vorschau** — INNER, LEFT, RIGHT, FULL OUTER und CROSS. Wer die Join-Art ändert, sieht sofort die Zeilenzahl jeder Art, die Änderung gegenüber vorher (z. B. „INNER → LEFT: 3 → 4 Zeilen“), wie viele Zeilen ohne Partner wegfallen oder mit NULL bleiben, und Beispielzeilen, in denen die Zeilen ohne Partner gelb markiert oben stehen. Über „▸ Vorschau“ lässt sie sich auch ohne Wechsel öffnen. Unter jeder Verbindung steht außerdem, wie viele Zeilen danach noch übrig sind (z. B. „4 → 2 Zeilen — 2 ohne Partner fallen weg“). Wirft ein INNER JOIN Zeilen weg, gibt es direkt den Knopf **Auf LEFT umstellen**; bleiben am Ende 0 Zeilen, nennt der Hinweis oben die betroffenen Verbindungen. Typisch bei WhatsApp: Gruppen stehen nicht im Adressbuch (`wa_contacts`), und `sender_jid_row_id` ist nur in Gruppen gefüllt – beides braucht LEFT.
-- **Spalten umbenennen (AS)** — eigene Ergebnis-Namen für Spalten, Funktionen und Rechenfunktionen; Leerzeichen und Umlaute erlaubt.
-- **Funktionen pro Spalte** — über **fx** an jeder Spalte: Text, Zahl, Datum und Profi-Funktionen (u. a. Millisekunden-, Unix- und Apple-Zeitstempel lesbar machen, wahlweise in Ortszeit oder UTC; Apple-Zeit zählt wie in iPhone-Datenbanken ab dem 1.1.2001), verkettbar und mit Vorschau auf echten Daten.
-- **Geführte Aufgaben** — je ein Aufgabensatz pro Beispiel-Datenbank, geprüft am Ergebnis, nicht am Wortlaut.
-- **SQL in beide Richtungen** — selbst geschriebenes SQL lässt sich in Bausteine umwandeln und umgekehrt; Abfragen kann man speichern und wieder laden.
-- **Aliase und doppelte Tabellen** — Tabellen-Aliase (`FROM message m`) werden beim Umwandeln verstanden. Kommt eine Tabelle mehrfach vor (z. B. `jid` als Chat und als Absender), behält jede Rolle ihren Alias; in Schritt 2 wird eine Tabelle dafür „noch einmal“ angeboten, der Rollen-Name lässt sich jederzeit ändern. Eigene Aliase (`FROM message AS nachricht`) werden beim Umwandeln zu Rollen-Namen. `ATTACH DATABASE 'wa.db' AS wa;` vor der Abfrage ist erlaubt, sofern `wa.db` geöffnet ist – im SQL-Editor wie beim Umwandeln. Einfache CASE- und COALESCE-Ausdrücke werden zu Wenn–dann bzw. Erster Wert; nur was darüber hinausgeht, bleibt freie Formel, Aliase darin werden passend umgeschrieben.
-- **Ansichten (VIEW)** — eine Abfrage unter einem Namen speichern und danach wie eine Tabelle verwenden. Ansichten erscheinen als **blaue Karten** im Diagramm (Ansichten aus geöffneten Dateien ebenso). Details unten.
-- **Eigene Daten** — SQLite-Dateien (.db/.sqlite) sowie Excel/CSV lassen sich öffnen; alles bleibt im Browser.
-- **CSV-Export mit eigenem Namen** — neben **⤓ CSV** steht der Dateiname (z. B. `whatsapp`, „.csv“ kommt von selbst dazu); der zuletzt benutzte Name bleibt gemerkt. Exportiert werden immer alle Ergebniszeilen.
-- **Mehrere Datenbanken gleichzeitig** — bis zu 10 Dateien/Beispiele bleiben gemeinsam geöffnet. Tabellen aus verschiedenen Datenbanken lassen sich im Diagramm verbinden und mit JOIN abfragen; gleiche Datei- und Tabellennamen werden eindeutig unterschieden.
+- **Eine einzige Datei:** Doppelklick auf `SQL Spielplatz.html` – fertig. Keine Installation, kein Server, kein Konto.
+- **Läuft offline:** Alles passiert in deinem Browser. Keine Daten verlassen den Rechner.
+- **Originaldateien bleiben unangetastet:** Geöffnete Datenbanken werden nie überschrieben.
 
-Mitgeliefert sind zwei Beispiel-Datenbanken: ein Messenger-Backup („Plauder") und eine größere Firmen-Datenbank mit 8 Tabellen und rund 50.000 Datensätzen.
+---
 
-## Datenbanken gemeinsam verwenden
+## Loslegen in einer Minute
 
-1. **+ Datenbanken öffnen** anklicken und eine oder mehrere SQLite-, Excel- oder CSV-Dateien auswählen. Weitere Dateien werden hinzugefügt; vorhandene Abfragen bleiben erhalten. Auch die Beispiel-Buttons fügen Datenbanken hinzu.
-2. Oben stehen die geöffneten Dateien mit ihrem SQL-Namen, beispielsweise `kunden` und `bestellungen`. Tabellen heißen entsprechend `kunden.kunde` und `bestellungen.auftrag`. Bei gleichen Dateinamen wird automatisch `_2`, `_3` usw. ergänzt.
-3. Die Punkte neben passenden Spalten von einer Tabellenkarte zur anderen ziehen, etwa von `kunde.id` zu `auftrag.kunde_id`. Die Linie wird sofort zum JOIN in der Abfrage: Ist noch keine Start-Tabelle gewählt, wird die Tabelle, an der die Linie beginnt, zur Start-Tabelle (FROM). Join-Art und Rollen-Name lassen sich danach in Schritt **2 Verbinden** anpassen.
+1. `SQL Spielplatz.html` im Browser öffnen. Die Beispiel-Datenbank „Plauder“ (ein kleines Messenger-Backup) ist schon geladen.
+2. Oben auf **+ Datenbanken öffnen** klicken, um eigene Dateien dazuzunehmen (`.db`, `.sqlite`, `.xlsx`, `.csv` …). Bis zu 10 Dateien können gleichzeitig offen sein.
+3. Rechts in drei Schritten die Abfrage bauen und auf **▶ Ausführen** klicken.
+4. Ergebnis ansehen und bei Bedarf mit **⤓ CSV** exportieren.
 
-Diagramm und Schritt **2 Verbinden** zeigen immer dasselbe:
+---
 
-- **Linie ziehen** → sofort eine Verbindung. Ist noch keine Start-Tabelle gewählt, wird die Tabelle am Linienanfang zur Start-Tabelle. Sind beide Tabellen schon in der Abfrage, kommt die Zieltabelle in einer weiteren Rolle dazu (z. B. `jid` noch einmal als `jid_2` für den Absender). Eine Linie, die an keine Tabelle der Abfrage anschließt, bleibt nicht stehen – ein Hinweis erklärt, warum.
-- **Verbindung rechts anlegen** (auch „Tabelle und Spalten selbst wählen“ oder per SQL-Umwandlung) → die passende Linie erscheint im Diagramm; werden die Spalten geändert, zieht die Linie mit.
-- **Löschen** wirkt auf beiden Seiten: ✕ auf der Linie entfernt die Verbindung, ✕ an der Verbindung entfernt die selbst gezogene Linie.
-- Linien, die zur Abfrage gehören, sind kräftig; blasse Linien sind nur Angebote (Fremdschlüssel aus der Datei oder Vorschläge). Ein Klick auf eine blasse Linie übernimmt sie als Verbindung. Mit **⊞** lassen sich die Tabellen neu anordnen.
+## Was du damit machen kannst
 
-Alternativ direkt im SQL-Editor:
+### Abfragen zusammenklicken – in drei Schritten
 
-```sql
-SELECT kunden.kunde.name, bestellungen.auftrag.betrag
-FROM kunden.kunde
-JOIN bestellungen.auftrag
-  ON kunden.kunde.id = bestellungen.auftrag.kunde_id;
-```
+| Schritt | Was du tust |
+|---|---|
+| **1 Start-Tabelle** | Die Tabelle wählen, um die sich alles dreht – z. B. die Nachrichten. Per Suchliste oder Doppelklick auf eine Karte im Diagramm. |
+| **2 Verbinden** | Weitere Tabellen dazuholen – z. B. zu jeder Nachricht den Namen des Absenders. |
+| **3 Spalten** | Festlegen, was im Ergebnis stehen soll. Dazu bei Bedarf filtern, gruppieren, sortieren und begrenzen. |
 
-Mit **×** neben einer Datenbank wird nur diese geschlossen. Eine Baustein-Abfrage, die sie verwendet, wird dabei zurückgesetzt. Das Schließen verwirft ihre Änderungen im Browser; die Originaldateien werden nie überschrieben. Beziehungen und geöffnete Datenbanken gelten für die aktuelle Sitzung. Aufgaben werden angezeigt, wenn genau eine Beispiel-Datenbank geöffnet ist.
+Jeder Schritt erklärt, was jetzt zu tun ist. Ist er erledigt, geht es von selbst weiter.
 
-## Ansichten (VIEW): in zwei Stufen denken
+### Tabellen verbinden – ohne JOIN-Syntax
 
-Manche Tabellen braucht eine Abfrage in mehreren Rollen – bei WhatsApp etwa `jid` und `wa_contacts` einmal für den Chatpartner und einmal für den Absender. Übersichtlicher wird das mit einer Ansicht:
+- **Linie ziehen:** Im Diagramm vom Punkt einer Spalte zu einer passenden Spalte einer anderen Tabelle ziehen (z. B. `nachrichten.kontakt_id` → `nutzer.id`). Daraus wird sofort eine Verbindung.
+- **Vorschläge aus der Datei:** Hat der Hersteller der Datenbank festgelegt, wie Tabellen zusammenhängen (Fremdschlüssel), siehst du das als **gepunktete Linie**. Ein Klick übernimmt sie, ✕ blendet sie aus.
+- **Selbst wählen:** Fehlt eine Linie, wählst du in Schritt 2 „Tabelle und Spalten selbst wählen“ – das geht auch über zwei Datenbanken hinweg.
+- **Eigene Namen (Rollen):** Braucht man eine Tabelle doppelt – etwa Kontakte einmal als *Chatpartner* und einmal als *Absender* –, bekommt jede Verwendung einen eigenen Namen. Namen lassen sich jederzeit ändern. Alles, was daran hängt, wird automatisch mitgeändert.
+- **Was passiert mit Zeilen ohne Partner?** Unter jeder Verbindung steht, wie viele Zeilen übrig bleiben. Fallen Zeilen weg, genügt ein Klick auf **Auf LEFT umstellen**. Die Vorschau zeigt alle Join-Arten (INNER, LEFT, RIGHT, FULL, CROSS) mit Zeilenzahlen und Beispielzeilen nebeneinander.
 
-1. **Stufe 1 – Personenverzeichnis anlegen.** Im Reiter **Daten ändern** den Baustein **VIEW** wählen, einen Namen wie `personen` eintragen und die Abfrage dazu (aus `jid`, `jid_map`, `wa_contacts`). Die Abfrage lässt sich auch **aus den Bausteinen** oder **aus dem SQL-Editor** übernehmen, oder man klickt in **Abfragen** auf **⊞ Als Ansicht speichern**. Wer ein komplettes `CREATE TEMP VIEW personen AS SELECT …` einfügt, bekommt Name und Abfrage automatisch getrennt. Alternativ führt man die Anweisung direkt unter **SQL schreiben** aus.
-2. **Stufe 2 – Nachrichten.** Die Ansicht steht jetzt als blaue Karte im Diagramm (Gruppe „temp · eigene Ansichten“) und in allen Bausteinen wie eine Tabelle zur Verfügung. Jede Nachricht schaut darin zweimal nach: `JOIN personen AS unterhaltung …` und `LEFT JOIN personen AS absender …` – per Linie, in Schritt 2 oder per SQL-Umwandlung.
+### Das Ergebnis gestalten
 
-Ansichten werden immer als `TEMP VIEW` angelegt: Sie gelten, solange die Seite offen ist, dürfen Tabellen aus allen geöffneten Datenbanken verwenden und verändern keine Datei. (Eine dauerhafte `CREATE VIEW` über zwei Datenbanken lässt SQLite nicht zu – die App sagt dann, dass `TEMP` fehlt.) Gibt es den Namen schon, wird die Ansicht ersetzt; ihre Karte bleibt dabei an ihrem Platz. Unter **Eigene Ansichten** lässt sich jede Ansicht zum Bearbeiten laden (✎) oder löschen (✕). Ein Name, den schon eine Tabelle trägt, wird abgelehnt, damit Abfragen eindeutig bleiben. Wird eine Datenbank geschlossen, auf die eine Ansicht zugreift, verschwindet ihre Karte; nach dem erneuten Öffnen ist sie wieder da. Ansichten lassen sich nicht mit INSERT/UPDATE/DELETE ändern und fehlen deshalb dort in der Tabellenauswahl.
+- **Spalten auswählen und anordnen:** per „+ Spalte“ oder direkt aus dem Diagramm hineinziehen. Die Reihenfolge änderst du durch **Ziehen am Griff ⠿** oder mit ▲▼.
+- **Umbenennen:** Jede Spalte kann einen eigenen Namen im Ergebnis bekommen (auch mit Leerzeichen und Umlauten).
+- **Wenn–dann:** z. B. „wenn *gesendet_von_mir* = 1, dann ‚ICH‘, sonst der Name“.
+- **Erster vorhandener Wert:** z. B. Adressbuch-Name, sonst WhatsApp-Name, sonst Telefonnummer.
+- **Fester Wert:** z. B. `WhatsApp` in jeder Zeile, damit sich Ergebnisse mehrerer Messenger später zusammenführen lassen.
+- **Filtern, Gruppieren, Sortieren, Begrenzen:** unter „Außerdem“ in Schritt 3. Beim Filtern schlägt das Wertefeld die vorhandenen Werte der Spalte vor.
 
-## Übersicht und Kartengrößen
+### Zeitstempel und Werte lesbar machen
 
-Die Leiste über dem Diagramm bleibt immer erreichbar:
+Über **fx** an jeder Spalte gibt es Funktionen für Text, Zahlen und Datum. Sie lassen sich verketten und zeigen gleich eine Vorschau mit echten Daten. Besonders praktisch bei Handy-Datenbanken:
 
-- **Nach Datenbank:** Tabellen werden je Datenbank zusammengefasst und alphabetisch angeordnet.
-- **Raster A–Z:** Alle Tabellen stehen in einem festen alphabetischen Raster, unabhängig von ihrer Datenbank.
-- **Liste A–Z:** Eine alphabetische Spalte bei 100 % Zoom; praktisch zum Lesen und vertikalen Scrollen.
-- **Alles einpassen:** Zoomt auf alle sichtbaren Tabellen. Die Raster-Layouts wählen auch beim Hinzufügen von Datenbanken eine zur Bildschirmfläche passende Anordnung. Der gewählte Layoutmodus wird im Browser gemerkt.
+- **Millisekunden-Zeitstempel** (Android, Signal, WhatsApp) → lesbares Datum
+- **Unix-Zeit** (Sekunden seit 1970) → lesbares Datum
+- **Apple-Zeit** (iPhone-Datenbanken, Zählung ab 1.1.2001) → lesbares Datum. Sekunden, Milli-, Mikro- und Nanosekunden werden automatisch erkannt, also auch die langen Zahlen mit vielen Nullen am Ende.
+- jeweils wahlweise in **Ortszeit** oder **UTC** (üblich in Forensik-Berichten)
 
-Am sichtbaren **⤡-Griff unten rechts** jeder Tabellenkarte lassen sich **Breite und Höhe** ziehen, auch bei verändertem Zoom. Mit fokussiertem Griff funktionieren die Pfeiltasten ebenfalls (mit Umschalt in größeren Schritten). **↺** oder ein Doppelklick auf den Griff stellt die Standardgröße wieder her. Lange Spaltenlisten scrollen innerhalb der Karte; Beziehungslinien folgen mit. Ein Layout-Klick berücksichtigt die veränderten Kartengrößen und ordnet sie ohne Überschneidungen neu an.
+### Daten finden
 
-Zum Verschieben der Ansicht eine **freie Fläche mit der linken Maustaste ziehen**; rechte/mittlere Maustaste und Strg+Mausrad funktionieren weiterhin. Karten lassen sich am Kopf frei verschieben und mit dem **durchgestrichenen Auge** im Kartenkopf direkt ausblenden; die übrigen Karten bleiben dabei, wo sie sind, und ein kurzer Hinweis bietet **Rückgängig** an. Über **Tabellen** werden Tabellen aus- und wieder eingeblendet – wie beim Excel-Filter mit Suchfeld (mehrere Wörter grenzen weiter ein) und **Alle auswählen**, das nur auf die aktuellen Treffer wirkt. Einzeln zurückgeholte Tabellen kehren an ihren alten Platz zurück oder, falls der inzwischen belegt ist, an die nächste freie Stelle daneben. Ausgeblendete Tabellen bleiben ausgeblendet, bis man sie über dieses Menü zurückholt, auch beim Wechsel der Anordnung und nach dem Neuladen (die Auswahl wird im Browser gemerkt). Tabellen, die die aktuelle Abfrage verwendet, bleiben in den Bausteinen verfügbar, auch wenn ihre Karte ausgeblendet ist.
+- **Spaltensuche** in jeder Tabellenkarte: Treffer werden hervorgehoben, Enter springt zum nächsten.
+- **Daten-Vorschau** (▤ an der Karte): die ersten 100 Zeilen einer Tabelle. Das Suchfeld blendet dort alle anderen Spalten aus.
 
-## Technik
+### Ergebnisse weitergeben
 
-Die Datei ist ein Bundle: React und SQLite (sql.js, WebAssembly) laufen komplett im Browser. Alle Bestandteile — Skripte, Schriften und das WASM-Modul — stecken gzip-komprimiert und Base64-kodiert in einem Manifest innerhalb der HTML-Datei und werden beim Öffnen zu Blob-URLs entpackt. Deshalb ist der Quelltext in der Datei nicht direkt lesbar, und deshalb funktioniert sie auch ohne Internet.
+- **⤓ CSV** exportiert immer alle Ergebniszeilen. Den Dateinamen trägst du daneben ein, er wird gemerkt.
+- **⤓ Abfrage speichern / ⤒ Abfrage laden:** eine gebaute Abfrage als Datei sichern und später wieder öffnen.
 
-Die bearbeiteten Anwendungsmodule liegen lesbar in `src/`. Nach Änderungen baut `python scripts/build.py` sie wieder in die HTML-Datei ein. Zum Benutzen oder Weitergeben genügt weiterhin allein die HTML-Datei. Zusätzliche Datenbanken werden über SQLite `ATTACH` in einem gemeinsamen Arbeitsbereich verbunden.
+### SQL lernen
 
-`node tests/multi-database.cjs` prüft die eingebetteten Versionen von SQLite/Babel ohne Paketinstallation: Layoutreihenfolge, Abstände bei veränderten Kartengrößen, Platzierung wieder eingeblendeter Karten, Zoom-/Scroll-Geometrie, JOIN-Arten, Namenskonflikte, SQL/Baustein-Konvertierung (inkl. Aliasen, doppelt verwendeter Tabellen und CASE), Sonderzeichen, gezielte Datenänderungen, das Abhängen einzelner Datenbanken sowie Ansichten (TEMP VIEW über zwei Datenbanken, Ersetzen, zwei Rollen, nicht lesbare Ansichten).
+- Das SQL zu deinen Bausteinen steht immer sichtbar darunter.
+- Beim Ausführen zeigt eine Leiste, **in welcher Reihenfolge SQL wirklich arbeitet** (erst FROM, zuletzt LIMIT) und wie viele Zeilen nach jeder Stufe übrig sind.
+- Unter **SQL schreiben** tippst du selbst. Mit **☰ In Bausteine umwandeln** wird ein SELECT wieder zu Bausteinen – auch mit Aliasen, CASE und COALESCE.
+- **Geführte Aufgaben** zu beiden Beispiel-Datenbanken. Geprüft wird das Ergebnis, nicht der genaue Wortlaut.
+
+---
+
+## Beispiel: WhatsApp-Nachrichten mit Namen
+
+So entsteht aus einer Android-`msgstore.db` eine lesbare Nachrichtenliste mit Namen (geprüft an einem Pixel-10-Abbild, WhatsApp-Stand 2026):
+
+1. **+ Datenbanken öffnen** → `msgstore.db` und `wa.db` (das Adressbuch). Sie heißen in der App dann `msgstore` und `wa`.
+2. **Schritt 1:** `message` als Start-Tabelle wählen.
+3. **Schritt 2** – die Verbindungen der Reihe nach, jeweils über „+ Tabelle verbinden“ → „Tabelle und Spalten selbst wählen“:
+
+   | Tabelle | Verbindung | Art | Name (Rolle) |
+   |---|---|---|---|
+   | `chat` | `message.chat_row_id = chat._id` | INNER | – |
+   | `jid` | `chat.jid_row_id = jid._id` | INNER | `chatpartner` |
+   | `jid_map` | `chatpartner._id = jid_map.lid_row_id` | LEFT | – |
+   | `jid` | `jid_map.jid_row_id = jid._id` | LEFT | `nummer` |
+   | `wa_contacts` | `nummer.raw_string` **sonst** `chatpartner.raw_string` `= wa_contacts.jid` | LEFT | `kontakt` |
+
+   Warum der Umweg über `jid_map`? Neuere WhatsApp-Versionen führen Chatpartner unter einer anonymen Kennung (`…@lid`), das Adressbuch kennt aber nur Telefonnummern (`…@s.whatsapp.net`). `jid_map` übersetzt die eine in die andere. Das „sonst“ fügst du bei der letzten Verbindung mit **+ sonst andere Spalte (COALESCE)** hinzu – so passen auch Chats, die schon unter der Nummer laufen. Im Testabbild fanden so 46 von 49 Nachrichten einen Namen, ohne `jid_map` nur 19.
+
+   **LEFT** ist wichtig: Gruppen und unbekannte Nummern stehen nicht im Adressbuch – mit INNER würden diese Nachrichten wegfallen.
+4. **Schritt 3:** Spalten wählen, benennen und per Drag & Drop anordnen, z. B.
+   - `message.timestamp` mit **fx → MS→DATUM** → `Zeit`
+   - **+ Erster Wert:** `kontakt.display_name`, sonst `kontakt.wa_name`, sonst `chatpartner.raw_string` → `Chat mit`
+   - `message.text_data` → `Text`
+5. **▶ Ausführen** und als CSV exportieren.
+
+Den Absender in Gruppen bekommst du genauso: `jid` noch einmal über `message.sender_jid_row_id = jid._id` (LEFT, Rolle `absender`), dann wieder `jid_map` und `wa_contacts` dahinter.
+
+> WhatsApp- und iPhone-Datenbanken enthalten **keine** hinterlegten Fremdschlüssel (im Pixel-10-Abbild: 0 in 314 Tabellen). Deshalb erscheinen dort keine gepunkteten Vorschläge – die Verbindungen legst du selbst an. Geraten wird bewusst nichts.
+
+---
+
+## Das Diagramm
+
+| Linie | Bedeutung |
+|---|---|
+| **durchgezogen** | Diese Verbindung steckt in deiner Abfrage. ✕ auf der Linie entfernt sie. |
+| **gepunktet** | Vorschlag aus der Datei (Fremdschlüssel). Klick = übernehmen, ✕ = für diese Sitzung ausblenden. |
+| **blaue Karte** | Eine Ansicht (VIEW) statt einer Tabelle. |
+
+- **Anordnen:** „Nach Datenbank“, „Raster A–Z“ oder „Liste A–Z“. **⛶ Alles einpassen** zoomt auf alle sichtbaren Tabellen.
+- **Bewegen:** Freie Fläche ziehen verschiebt die Ansicht, Strg+Mausrad zoomt. Karten lassen sich am Kopf verschieben und am Griff **⤡** in der Größe ändern (↺ setzt zurück).
+- **Ausblenden:** Das durchgestrichene Auge an der Karte blendet eine Tabelle aus (mit Rückgängig). Über **▦ Tabellen** holst du sie zurück – mit Suchfeld und „Alle auswählen“ wie beim Excel-Filter. Die Auswahl bleibt auch nach dem Neuladen erhalten.
+
+---
+
+## Ansichten (VIEW): komplizierte Abfragen in zwei Stufen
+
+Wenn eine Abfrage zu groß wird, hilft eine Ansicht – eine gespeicherte Abfrage, die du danach wie eine Tabelle verwendest.
+
+1. **Stufe 1:** Eine Abfrage bauen, z. B. ein Personenverzeichnis aus `jid` und `wa_contacts`, und auf **⊞ Als Ansicht speichern** klicken. Einen Namen vergeben, etwa `personen`.
+2. **Stufe 2:** `personen` erscheint als blaue Karte und lässt sich wie jede Tabelle verbinden – z. B. einmal als `chatpartner` und einmal als `absender`.
+
+Ansichten gelten, solange die Seite offen ist, dürfen Tabellen aus mehreren Datenbanken verwenden und verändern keine Datei. Unter **Daten ändern → Eigene Ansichten** kannst du sie bearbeiten (✎) oder löschen (✕).
+
+---
+
+## Häufige Fragen
+
+**Werden meine Dateien verändert?**
+Nein. Änderungen (z. B. über „Daten ändern“) wirken nur auf die Kopie im Browser. Die Originaldatei bleibt, wie sie ist.
+
+**Warum sehe ich keine gepunkteten Linien?**
+Die Datenbank enthält keine hinterlegten Fremdschlüssel – bei Handy-Datenbanken ist das der Normalfall. Verbinde die Tabellen per Linie oder in Schritt 2.
+
+**Nach dem Verbinden habe ich 0 Zeilen.**
+Eine INNER-Verbindung wirft Zeilen ohne Partner weg. Der Hinweis in Schritt 2 nennt die betroffene Verbindung. Mit **Auf LEFT umstellen** bleiben sie erhalten.
+
+**Das Datum ist ein seltsames Jahr (1970 oder weit in der Zukunft).**
+Wahrscheinlich die falsche Zeit-Funktion: Android nutzt meist Millisekunden (**MS→DATUM**), iPhones zählen ab 2001 (**APPLE→DATUM**).
+
+**Kann ich SQL direkt eingeben?**
+Ja, unter **SQL schreiben**. Erlaubt ist alles, was SQLite kann – auch `PRAGMA`, `INSERT`, `UPDATE` und `CREATE TEMP VIEW`. Tabellen sprichst du dort als `datenbank.tabelle` an, z. B. `plauder.nachrichten`. Ein `ATTACH DATABASE 'wa.db' AS wa;` davor ist erlaubt, wenn `wa.db` geöffnet ist.
+
+**Neben der Datenbank liegen Dateien mit `-wal` und `-shm`. Brauche ich die?**
+Möglicherweise ja: In der `-wal`-Datei können die neuesten Änderungen stehen, die noch nicht in die `.db` übernommen sind. Der Spielplatz öffnet nur die `.db`. Arbeite deshalb vorher an einer **Kopie** alle drei Dateien zusammen ein, z. B. mit `sqlite3 msgstore.db "PRAGMA wal_checkpoint(TRUNCATE);"` im Ordner der Kopie, und öffne danach diese `.db`. Die Originaldateien dabei nie selbst öffnen.
+
+**Welche Dateien kann ich öffnen?**
+SQLite (`.db`, `.sqlite`, `.sqlite3`, `.db3`), Excel (`.xlsx`, `.xls`, `.ods`) und CSV. Bei gleichen Datei- oder Tabellennamen hängt die App automatisch `_2`, `_3` … an.
+
+---
+
+## Für Entwickler
+
+Die HTML-Datei ist ein Bundle: React und SQLite (sql.js, WebAssembly) laufen komplett im Browser. Skripte, Schriften und das WASM-Modul stecken gzip-komprimiert und Base64-kodiert in der Datei. Deshalb funktioniert sie offline, und deshalb ist der Quelltext darin nicht direkt lesbar.
+
+- Der lesbare Quelltext liegt in `src/`.
+- Nach Änderungen baut `python scripts/build.py` ihn wieder in `SQL Spielplatz.html` ein. Zum Benutzen und Weitergeben genügt allein die HTML-Datei.
+- Mehrere Datenbanken werden per SQLite `ATTACH` in einem gemeinsamen Arbeitsbereich verbunden.
+- `node tests/multi-database.cjs` testet mit den eingebetteten SQLite- und Babel-Versionen, ohne Paketinstallation. Geprüft werden: Layouts und Kartengrößen, Zoom und Scrollen, alle JOIN-Arten, Namenskonflikte, Fremdschlüssel nur als Vorschlag, SQL ↔ Bausteine (Aliase, doppelte Tabellen, CASE, Apple-Zeit in allen Einheiten), Umbenennen von Rollen und nachträglich geänderte Verbindungen, Sonderzeichen, Datenänderungen, das Schließen einzelner Datenbanken und Ansichten.

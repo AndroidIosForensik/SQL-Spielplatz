@@ -80,6 +80,15 @@ function stripQuotes(s) {
   return s;
 }
 
+// Regex aus einer Funktions-Vorlage: das erste {c} fängt die Spalte, jedes weitere muss dieselbe sein.
+// Leerzeichen sind optional – normExpr entfernt sie neben Klammern, und die Spalte kann auf „)“ enden.
+function tplRegex(key) {
+  let first = true;
+  const body = normExpr(FN_DEFS[key].tpl).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s*')
+    .replace(/\\\{c\\\}/g, () => (first ? (first = false, '([\\s\\S]+?)') : '\\1'));
+  return new RegExp('^' + body + '$', 'i');
+}
+
 /* ---------- SQL-Ausdruck → Funktions-Kette ---------- */
 // canon(expr) → kanonischer Spaltenname (wie availableColumns) oder null
 // Gibt {base, fns:[{fn,arg}...]} zurück (innerste Funktion zuerst), oder null
@@ -88,7 +97,10 @@ function decomposeExpr(expr, canon) {
 
   // Spezialformen (per Regex auf normalisiertem Text)
   const special = [
-    // Apple-Zeit vor den Unix-Formen prüfen, sonst hielte UNIX→UTC „x + 978307200“ für die Spalte
+    // Apple-Zeit vor den Unix-Formen prüfen, sonst hielte UNIX→UTC „x + 978307200“ für die Spalte.
+    // Zuerst die heutige Form mit Einheiten-Erkennung, dann die ältere „x + 978307200“.
+    { re: tplRegex('appledate'), fn: 'appledate' },
+    { re: tplRegex('appleutc'), fn: 'appleutc' },
     { re: /^datetime\(([\s\S]+?)\s*\+\s*978307200,'unixepoch','localtime'\)$/i, fn: 'appledate' },
     { re: /^datetime\(([\s\S]+?)\s*\+\s*978307200,'unixepoch'\)$/i, fn: 'appleutc' },
     { re: /^datetime\(substr\(([\s\S]+),1,10\),'unixepoch','localtime'\)$/i, fn: 'unixdate' },
