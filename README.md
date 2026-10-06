@@ -150,3 +150,9 @@ SQLite (`.db`, `.sqlite`, `.sqlite3`, `.db3`), Excel (`.xlsx`, `.xls`, `.ods`) u
 - `python scripts/build.py` baut ihn in `SQL Spielplatz.html` ein. Für die Nutzung reicht die HTML-Datei.
 - Mehrere Datenbanken werden per SQLite `ATTACH` in einem gemeinsamen Arbeitsbereich verbunden.
 - `node tests/multi-database.cjs` führt die Tests mit den eingebetteten SQLite- und Babel-Versionen aus, ohne Paketinstallation. Getestet werden Layouts und Kartengrößen, Zoom und Scrollen, JOIN-Arten, Namenskonflikte, Fremdschlüssel als Vorschlag, die Umwandlung zwischen SQL und Bausteinen (Aliase, mehrfach verwendete Tabellen, CASE, Apple-Zeit in allen Einheiten), das Umbenennen von Aliasen und das nachträgliche Ändern von Verbindungen, Sonderzeichen, Datenänderungen, das Schließen einzelner Datenbanken und Ansichten.
+
+## Lizenz
+
+MIT, siehe [LICENSE](LICENSE).
+
+In `SQL Spielplatz.html` sind Bibliotheken und Schriften anderer Projekte eingebettet, für die deren eigene Lizenzen gelten: React, Babel und sql.js (MIT), SheetJS (Apache 2.0) sowie die Schriften Baloo 2, Nunito und Fira Code (SIL Open Font License 1.1).
