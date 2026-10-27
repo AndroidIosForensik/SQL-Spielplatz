@@ -592,6 +592,20 @@ function App() {
     setNotice('✓ In Bausteine umgewandelt!' + (res.notes && res.notes.length ? ' (' + res.notes.join(', ') + ')' : ' Prüfe die Bausteine und führe sie aus.'));
   };
 
+  // Alle Bausteine auf einmal leeren; die vorige Abfrage lässt sich über „Rückgängig“ zurückholen
+  const blocksEmpty = JSON.stringify(blocks) === JSON.stringify(emptyBlocks());
+  const resetBlocks = () => {
+    if (blocksEmpty || running) return;
+    const before = blocks;
+    setBlocksRaw(emptyBlocks());
+    setSqlMode(false);
+    setResult(null); setStageCounts({}); setError(null); setChStatus(null);
+    setNotice(<React.Fragment>
+      ✓ Alle Bausteine zurückgesetzt.{' '}
+      <button className="qtool" onClick={() => { setBlocks(before); setNotice('✓ Vorige Abfrage wiederhergestellt.'); }}>↶ Rückgängig</button>
+    </React.Fragment>);
+  };
+
   /* ---------- Selbst geschriebenes SQL ausführen ---------- */
   const runCustom = () => {
     if (!customSQL.trim() || running || loadingRef.current) return;
@@ -838,6 +852,8 @@ function App() {
                         onClick={() => { setViewDraft({ select: viewSource, stamp: Date.now() }); setTab('modify'); }}
                         title={viewSource ? 'Diese Abfrage unter einem Namen als Ansicht (VIEW) speichern – sie erscheint als blaue Karte und lässt sich wie eine Tabelle verwenden'
                                           : 'Baue zuerst eine Abfrage – sie lässt sich dann als Ansicht (VIEW) speichern'}>⊞ Als Ansicht speichern</button>
+                <button className="qtool" disabled={blocksEmpty || running} onClick={resetBlocks}
+                        title="Alle Bausteine leeren und mit einer neuen Abfrage beginnen – lässt sich rückgängig machen">↺ Bausteine zurücksetzen</button>
                 <input ref={queryFileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
                        onChange={(e) => { if (e.target.files[0]) importQueryFile(e.target.files[0]); e.target.value = ''; }} />
               </div>

@@ -25,6 +25,8 @@ Die Anwendung ist eine einzelne HTML-Datei (`SQL Spielplatz.html`). Sie braucht 
 
 Jeder Schritt zeigt einen kurzen Hinweis, was zu tun ist.
 
+„↺ Bausteine zurücksetzen“ leert alle Schritte auf einmal, um eine neue Abfrage zu beginnen. Mit „↶ Rückgängig“ in der Meldung darunter lässt sich die vorige Abfrage wiederherstellen.
+
 ### Tabellen verbinden
 
 - Im Diagramm eine Linie vom Punkt einer Spalte zu einer passenden Spalte einer anderen Tabelle ziehen (z. B. `nachrichten.kontakt_id` zu `nutzer.id`). Daraus wird eine Verbindung (JOIN).
