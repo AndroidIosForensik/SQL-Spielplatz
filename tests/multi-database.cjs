@@ -193,18 +193,27 @@ const runtime = (id, name) => {
     run('var attached = parseSQLToBlocks(generated, schema)');
     assert.equal(run('attached.error'), undefined);
     assert.equal(run("attached.blocks.selectCols.map(x => x.kind || x.fns.map(f => f.fn).join()).join()"), 'msdateutc,unixutc,value');
-    // Apple-Zeit (iPhone: Sekunden ab 1.1.2001): richtiger Wert und Rückweg SQL → Baustein
-    assert.equal(db.exec('SELECT ' + run("fnExpr('appleutc', '801647260')"))[0].values[0][0], '2026-05-28 07:47:40');
-    // … auch mit vielen Nullen am Ende: Milli-, Mikro-, Nanosekunden, mit Nachkommastellen oder als Text
-    for (const v of ['801647260000', '801647260000000', '801647260000000000', '801647260.5', "'801647260000000000'", '8.0164726e17']) {
+    // Apple-Zeit (iPhone: Sekunden ab 1.1.2001): kurze Formel, richtiger Wert und Rückweg SQL → Baustein
+    assert.equal(run("fnExpr('appleutc', 'x')"), "datetime(x + 978307200, 'unixepoch')");
+    for (const v of ['801647260', '801647260.5', "'801647260'"]) {
       assert.equal(db.exec('SELECT ' + run(`fnExpr('appleutc', ${JSON.stringify(v)})`))[0].values[0][0], '2026-05-28 07:47:40', 'Apple-Zeit ' + v);
     }
+    // … Nanosekunden (iMessage) mit eigenem Baustein, auch als Text oder in e-Schreibweise
+    assert.equal(run("fnExpr('applensutc', 'x')"), "datetime(x / 1e9 + 978307200, 'unixepoch')");
+    for (const v of ['801647260000000000', "'801647260000000000'", '8.0164726e17']) {
+      assert.equal(db.exec('SELECT ' + run(`fnExpr('applensutc', ${JSON.stringify(v)})`))[0].values[0][0], '2026-05-28 07:47:40', 'Apple-Nanosekunden ' + v);
+    }
     assert.equal(db.exec('SELECT ' + run("fnExpr('appleutc', 'NULL')"))[0].values[0][0], null);
-    ctx.appleSQL = `SELECT ${run("fnExpr('appledate', 'm._id')")} AS a, ${run("fnExpr('appleutc', 'upper(m.text_data)')")} AS b FROM zwei.message m`;
+    ctx.appleSQL = `SELECT ${run("fnExpr('appledate', 'm._id')")} AS a, ${run("fnExpr('appleutc', 'upper(m.text_data)')")} AS b, ` +
+      `${run("fnExpr('applensdate', 'm._id')")} AS c, ${run("fnExpr('applensutc', 'm._id')")} AS d FROM zwei.message m`;
     assert.equal(run("parseSQLToBlocks(appleSQL, schema).blocks.selectCols.map(x => x.fns.map(f => f.fn).join()).join('|')"),
-      'appledate|upper,appleutc', 'Apple-Zeit mit Einheiten-Erkennung wird wieder zum Baustein');
+      'appledate|upper,appleutc|applensdate|applensutc', 'Apple-Zeit (Sekunden und Nanosekunden) wird wieder zum Baustein');
     assert.equal(run("parseSQLToBlocks(\"SELECT datetime(m._id + 978307200, 'unixepoch', 'localtime') AS a, datetime(m._id+978307200,'unixepoch') AS b FROM zwei.message m\", schema).blocks.selectCols.map(x => x.fns.map(f => f.fn).join()).join()"),
       'appledate,appleutc', 'Apple-Zeit wird nicht als Unix-Zeit missverstanden');
+    // Datenbanknamen ausblenden (nur eine Datenbank offen): Tabellen ohne „plauder.“, Text und Rollen bleiben
+    assert.equal(run(`withoutDatabase("SELECT plauder.nutzer.name, 'plauder.nutzer' AS t FROM plauder.nutzer JOIN plauder.\\"my tab\\" AS plauder ON plauder.id = plauder.nutzer.id", 'plauder', ['nutzer', 'my tab'])`),
+      `SELECT nutzer.name, 'plauder.nutzer' AS t FROM nutzer JOIN "my tab" AS plauder ON plauder.id = nutzer.id`);
+    assert.equal(run("withoutDatabase('SELECT * FROM plauder.nutzer_alt', 'plauder', ['nutzer'])"), 'SELECT * FROM plauder.nutzer_alt');
     // Spaltensuche: alle Wörter, ohne Groß/klein; leere Suche passt immer
     assert.equal(run("['ZMESSAGEDATE','ZSENTDATE','ZTEXT'].filter(c => colMatches(c, 'date')).join()"), 'ZMESSAGEDATE,ZSENTDATE');
     assert.equal(run("['ZMESSAGEDATE','ZSENTDATE','ZTEXT'].filter(c => colMatches(c, 'z mess')).join()"), 'ZMESSAGEDATE');

@@ -286,6 +286,29 @@ body[data-theme="dark"] .schema-stage .tcard-view .tcard-footer { color: #93B4F8
 body[data-theme="dark"] .qtool.qtool-view:not(:disabled) { color: #93B4F8; }
 .qtool:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: none; }
 .qtools, .mod-actions { flex-wrap: wrap; }
+/* Zurücksetzen des aktuellen Schritts, rechts unter den Schritt-Reitern */
+.qstep-tools { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
+.qstep-tools .qtool { font-size: 11.5px; padding: 4px 10px; }
+/* Funktions-Assistent als Fenster mittig über der Seite statt am fx-Knopf (dort am rechten Rand abgeschnitten) */
+.fnpop-backdrop { background: rgba(20, 16, 10, 0.28); }
+.fnpop {
+  position: fixed; inset: 0; margin: auto; z-index: 45;
+  width: min(560px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 48px); overflow-y: auto;
+  padding: 14px 16px;
+}
+.fnpop-chip { font-size: 11px; padding: 4px 8px; }
+/* Schalter „Datenbankname“ im Kopf der SQL-Vorschau (nur bei einer geöffneten Datenbank) */
+.sqlprev-db {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  font: 700 11.5px 'Nunito', sans-serif; color: var(--ink-soft); cursor: pointer; white-space: nowrap;
+}
+/* Versionsnummer klein unter dem Logo – ohne zusätzliche Breite in der ohnehin vollen Kopfzeile */
+.topbar .logo { position: relative; }
+.topbar .logo .app-version {
+  position: absolute; right: 0; bottom: -11px;
+  font: 700 10px/1 'Fira Code', monospace; color: var(--ink-soft); letter-spacing: 0;
+}
+.fnpop-sql { white-space: pre-wrap; word-break: break-word; }
 .mod-chip { min-width: 84px; }
 /* Spaltensuche: Fußzeile der Tabellenkarte, Kopf des Vorschaufensters */
 .tcard-search {

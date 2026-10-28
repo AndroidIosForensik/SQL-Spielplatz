@@ -1,15 +1,23 @@
 // Live-SQL-Vorschau + animierte Ergebnis-Tabelle
 
-function SqlPreview({ blocks }) {
+// dbNames: nur bei genau einer geöffneten Datenbank – { on, set } schaltet „plauder.“ vor den Tabellen ein/aus
+function SqlPreview({ blocks, show, dbNames }) {
   const parts = buildQueryParts(blocks);
   return (
     <div className="sqlprev" data-screen-label="SQL-Vorschau">
-      <div className="panel-title">Dein SQL <span className="panel-sub">schreibt sich beim Bauen mit</span></div>
+      <div className="panel-title">Dein SQL <span className="panel-sub">schreibt sich beim Bauen mit</span>
+        {dbNames && (
+          <label className="sqlprev-db" title="Bei nur einer geöffneten Datenbank findet SQLite die Tabellen auch ohne Datenbanknamen davor">
+            <input type="checkbox" checked={dbNames.on} onChange={(e) => dbNames.set(e.target.checked)} />
+            Datenbankname
+          </label>
+        )}
+      </div>
       <pre className="sqlcode">
         {!parts && <span className="sql-empty">-- Wähle zuerst eine Tabelle (FROM)…</span>}
         {parts && parts.map((p, i) => (
           <div key={p.key + ':' + p.text} className="sql-line"
-               dangerouslySetInnerHTML={{ __html: highlightSQL(p.text) + (i === parts.length - 1 ? ';' : '') }} />
+               dangerouslySetInnerHTML={{ __html: highlightSQL(show ? show(p.text) : p.text) + (i === parts.length - 1 ? ';' : '') }} />
         ))}
       </pre>
     </div>

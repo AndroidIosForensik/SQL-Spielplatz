@@ -25,7 +25,7 @@ Die Anwendung ist eine einzelne HTML-Datei (`SQL Spielplatz.html`). Sie braucht 
 
 Jeder Schritt zeigt einen kurzen Hinweis, was zu tun ist.
 
-„↺ Bausteine zurücksetzen“ leert alle Schritte auf einmal, um eine neue Abfrage zu beginnen. Mit „↶ Rückgängig“ in der Meldung darunter lässt sich die vorige Abfrage wiederherstellen.
+„↺ Bausteine zurücksetzen“ oben im Bau-Bereich leert alle Schritte auf einmal, um eine neue Abfrage zu beginnen. Unter den Schritt-Reitern leert „↺ … zurücksetzen“ nur den gerade offenen Schritt: bei „Verbinden“ alle Verbindungen samt der Spalten und Filter, die diese Tabellen betreffen, bei „Spalten“ die Ergebnis-Spalten mit Filtern, Gruppieren, Sortieren und Begrenzen. Mit „↶ Rückgängig“ in der Meldung darunter lässt sich die vorige Abfrage jeweils wiederherstellen.
 
 ### Tabellen verbinden
 
@@ -46,11 +46,12 @@ Jeder Schritt zeigt einen kurzen Hinweis, was zu tun ist.
 
 ### Funktionen für Spalten (fx)
 
-Über „fx“ an einer Spalte lassen sich Text-, Zahl- und Datumsfunktionen anwenden und hintereinander ausführen. Eine Vorschau zeigt das Ergebnis an echten Werten. Für Zeitstempel gibt es:
+Über „fx“ an einer Spalte öffnet sich ein Fenster, in dem sich Text-, Zahl- und Datumsfunktionen anwenden und hintereinander ausführen lassen. Eine Vorschau zeigt das Ergebnis an echten Werten. Für Zeitstempel gibt es:
 
 - MS→DATUM: Millisekunden seit 1970 (Android, WhatsApp, Signal)
 - UNIX→DATUM: Sekunden seit 1970
-- APPLE→DATUM: Zeit ab 1.1.2001 (iOS). Sekunden, Millisekunden, Mikrosekunden und Nanosekunden werden an der Größe der Zahl erkannt.
+- APPLE→DATUM: Sekunden ab 1.1.2001 (iOS, z. B. WhatsApp `ChatStorage.sqlite`)
+- APPLE-NS→DATUM: Nanosekunden ab 1.1.2001, lange Zahlen wie `801647260000000000` (iMessage `sms.db`)
 
 Jeweils in Ortszeit oder in UTC.
 
@@ -66,7 +67,7 @@ Jeweils in Ortszeit oder in UTC.
 
 ### SQL
 
-- Unter den Bausteinen steht das erzeugte SQL.
+- Unter den Bausteinen steht das erzeugte SQL. Ist nur eine Datenbank geöffnet, blendet der Haken „Datenbankname“ das vorangestellte `plauder.` aus, z. B. `FROM nutzer` statt `FROM plauder.nutzer`. Die Einstellung wird gespeichert.
 - Beim Ausführen zeigt eine Leiste die Reihenfolge, in der SQL die Abfrage abarbeitet (FROM zuerst, LIMIT zuletzt), und die Zeilenzahl nach jeder Stufe.
 - Unter „SQL schreiben“ kann SQL direkt eingegeben werden. „☰ In Bausteine umwandeln“ übernimmt ein SELECT in die Bausteine, einschließlich Aliasen, CASE und COALESCE.
 - Zu beiden Beispiel-Datenbanken gibt es Übungsaufgaben. Geprüft wird das Ergebnis, nicht der Wortlaut des SQL.
@@ -133,7 +134,7 @@ Die Datenbank enthält keine Fremdschlüssel. Bei App-Datenbanken ist das üblic
 Eine INNER-Verbindung entfernt Zeilen ohne Partner. Der Hinweis in Schritt 2 nennt die betroffene Verbindung, „Auf LEFT umstellen“ behält die Zeilen.
 
 **Das Datum liegt 1970 oder weit in der Zukunft.**
-Vermutlich passt die Zeitfunktion nicht. Android verwendet meist Millisekunden (MS→DATUM), iOS zählt ab 2001 (APPLE→DATUM).
+Vermutlich passt die Zeitfunktion nicht. Android verwendet meist Millisekunden (MS→DATUM), iOS zählt ab 2001 (APPLE→DATUM, bei sehr langen Zahlen wie in iMessage APPLE-NS→DATUM).
 
 **Was ist mit SQL im Editor erlaubt?**
 Alles, was SQLite unterstützt, auch `PRAGMA`, `INSERT`, `UPDATE` und `CREATE TEMP VIEW`. Tabellen werden als `datenbank.tabelle` angesprochen, z. B. `plauder.nachrichten`. Ein vorangestelltes `ATTACH DATABASE 'wa.db' AS wa;` ist erlaubt, wenn `wa.db` geöffnet ist.
@@ -151,7 +152,7 @@ SQLite (`.db`, `.sqlite`, `.sqlite3`, `.db3`), Excel (`.xlsx`, `.xls`, `.ods`) u
 - Der Quelltext liegt in `src/`.
 - `python scripts/build.py` baut ihn in `SQL Spielplatz.html` ein. Für die Nutzung reicht die HTML-Datei.
 - Mehrere Datenbanken werden per SQLite `ATTACH` in einem gemeinsamen Arbeitsbereich verbunden.
-- `node tests/multi-database.cjs` führt die Tests mit den eingebetteten SQLite- und Babel-Versionen aus, ohne Paketinstallation. Getestet werden Layouts und Kartengrößen, Zoom und Scrollen, JOIN-Arten, Namenskonflikte, Fremdschlüssel als Vorschlag, die Umwandlung zwischen SQL und Bausteinen (Aliase, mehrfach verwendete Tabellen, CASE, Apple-Zeit in allen Einheiten), das Umbenennen von Aliasen und das nachträgliche Ändern von Verbindungen, Sonderzeichen, Datenänderungen, das Schließen einzelner Datenbanken und Ansichten.
+- `node tests/multi-database.cjs` führt die Tests mit den eingebetteten SQLite- und Babel-Versionen aus, ohne Paketinstallation. Getestet werden Layouts und Kartengrößen, Zoom und Scrollen, JOIN-Arten, Namenskonflikte, Fremdschlüssel als Vorschlag, die Umwandlung zwischen SQL und Bausteinen (Aliase, mehrfach verwendete Tabellen, CASE, Apple-Zeit in Sekunden und Nanosekunden, Datenbanknamen ausblenden), das Umbenennen von Aliasen und das nachträgliche Ändern von Verbindungen, Sonderzeichen, Datenänderungen, das Schließen einzelner Datenbanken und Ansichten.
 
 ## Lizenz
 

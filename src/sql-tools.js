@@ -143,11 +143,6 @@ const FN_CATS = {
   profi: { key: 'profi', label: 'Profi', color: '#8B5CF6' }
 };
 
-// Apple-Zeit gibt es in Sekunden (7.9e8), Millisekunden (7.9e11), Mikrosekunden (7.9e14) und
-// Nanosekunden (7.9e17, z.B. iMessage). Die Größe der Zahl verrät die Einheit → immer Sekunden ab 2001.
-const APPLE_SECONDS = 'CASE WHEN abs({c}) >= 1e17 THEN {c} / 1e9 WHEN abs({c}) >= 1e14 THEN {c} / 1e6' +
-  ' WHEN abs({c}) >= 1e11 THEN {c} / 1e3 ELSE {c} END';
-
 // ret: 'text' | 'num' — wichtig fürs richtige Quoten von Vergleichswerten
 const FN_DEFS = {
   upper:   { key: 'upper', label: 'UPPER', name: 'GROSSBUCHSTABEN', cat: 'text', ret: 'text', tpl: 'UPPER({c})',
@@ -184,10 +179,14 @@ const FN_DEFS = {
              desc: 'Wandelt Unix-Zeitstempel (Sekunden, auch aus längeren Werten) in lokales Datum + Uhrzeit — wie bei Telegram-Backups.' },
   unixutc: { key: 'unixutc', label: 'UNIX→UTC', name: 'Unix-Sekunden lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime({c}, 'unixepoch')",
              desc: 'Unix-Zeitstempel in Sekunden als Datum + Uhrzeit in UTC.' },
-  appledate:{ key: 'appledate', label: 'APPLE→DATUM', name: 'Apple-Zeit lesbar', cat: 'datum', ret: 'text', tpl: "datetime(" + APPLE_SECONDS + " + 978307200, 'unixepoch', 'localtime')",
-             desc: 'iPhone-Datenbanken (z. B. WhatsApp ChatStorage.sqlite, iMessage sms.db) zählen ab dem 1.1.2001 statt 1970 — in Sekunden, Millisekunden, Mikro- oder Nanosekunden (lange Zahlen mit vielen Nullen am Ende). Die Einheit wird an der Größe der Zahl erkannt; +978307200 Sekunden rückt den Nullpunkt auf 1970. In lokaler Zeit.' },
-  appleutc:{ key: 'appleutc', label: 'APPLE→UTC', name: 'Apple-Zeit lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime(" + APPLE_SECONDS + " + 978307200, 'unixepoch')",
-             desc: 'Wie APPLE→DATUM (Sekunden, Milli-, Mikro- oder Nanosekunden ab 1.1.2001), aber in UTC statt Ortszeit — üblich in Forensik-Berichten.' },
+  appledate:{ key: 'appledate', label: 'APPLE→DATUM', name: 'Apple-Zeit lesbar', cat: 'datum', ret: 'text', tpl: "datetime({c} + 978307200, 'unixepoch', 'localtime')",
+             desc: 'iPhone-Datenbanken (z. B. WhatsApp ChatStorage.sqlite) zählen Sekunden ab dem 1.1.2001 statt 1970. +978307200 Sekunden rückt den Nullpunkt auf 1970 — danach wie Unix-Zeit, in lokaler Zeit. Für lange Zahlen mit vielen Nullen (iMessage) APPLE-NS→DATUM nehmen.' },
+  appleutc:{ key: 'appleutc', label: 'APPLE→UTC', name: 'Apple-Zeit lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime({c} + 978307200, 'unixepoch')",
+             desc: 'Wie APPLE→DATUM (Sekunden ab 1.1.2001), aber in UTC statt Ortszeit — üblich in Forensik-Berichten.' },
+  applensdate:{ key: 'applensdate', label: 'APPLE-NS→DATUM', name: 'Apple-Nanosekunden lesbar', cat: 'datum', ret: 'text', tpl: "datetime({c} / 1e9 + 978307200, 'unixepoch', 'localtime')",
+             desc: 'Für Apple-Zeit in Nanosekunden ab dem 1.1.2001 — lange Zahlen wie 801647260000000000, z. B. iMessage sms.db. / 1e9 macht Sekunden daraus, dann wie APPLE→DATUM. In lokaler Zeit.' },
+  applensutc:{ key: 'applensutc', label: 'APPLE-NS→UTC', name: 'Apple-Nanosekunden lesbar (UTC)', cat: 'datum', ret: 'text', tpl: "datetime({c} / 1e9 + 978307200, 'unixepoch')",
+             desc: 'Wie APPLE-NS→DATUM (Nanosekunden ab 1.1.2001), aber in UTC statt Ortszeit.' },
   datede:  { key: 'datede', label: 'TT.MM.JJJJ', name: 'deutsches Datum', cat: 'datum', ret: 'text', tpl: "strftime('%d.%m.%Y', {c})",
              desc: 'Formatiert ein Datum deutsch: aus 2026-05-30 wird 30.05.2026.' },
   uhrzeit: { key: 'uhrzeit', label: 'HH:MM:SS', name: 'Uhrzeit', cat: 'datum', ret: 'text', tpl: "strftime('%H:%M:%S', {c})",
@@ -776,6 +775,16 @@ function buildQuerySQL(blocks) {
   return parts.map(p => p.text).join('\n') + ';';
 }
 
+// Ist nur eine Datenbank geöffnet, findet SQLite ihre Tabellen auch ohne Datenbanknamen:
+// „plauder.nutzer.name“ → „nutzer.name“. Text in '…' und Rollen-Namen bleiben unangetastet.
+function withoutDatabase(sql, ns, tableNames) {
+  if (!sql || !ns || !tableNames.length) return sql;
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const names = tableNames.map(n => esc(aliasSQL(n))).sort((a, b) => b.length - a.length).join('|');
+  const re = new RegExp("'(?:[^']|'')*'|(^|[^\\w.\"])" + esc(aliasSQL(ns)) + '\\.(?=(?:' + names + ')(?![\\w"]))', 'g');
+  return sql.replace(re, (m, pre) => (pre === undefined ? m : pre));
+}
+
 // Zwischenstände für die Lauf-Animation: wie viele Zeilen nach jeder Stufe?
 function buildStageCountSQLs(blocks) {
   if (!blocks.table) return {};
@@ -827,6 +836,6 @@ Object.assign(window, {
   aggAlias, aggExpr, aggDisplayAlias, groupDisplayAlias,
   colMatches, aliasSQL, quoteIdent, userAlias, autoSelectAlias, resultAliases, fnExpr, fnAlias, normFns, chainExpr, chainAlias, chainRet,
   condSQL, buildWhereTxt, groupColExpr, groupColAlias,
-  buildQueryParts, buildQuerySQL, buildStageCountSQLs,
+  buildQueryParts, buildQuerySQL, withoutDatabase, buildStageCountSQLs,
   highlightSQL, escapeHtml
 });

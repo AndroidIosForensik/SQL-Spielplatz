@@ -1,6 +1,8 @@
 // SQL Spielplatz — Haupt-App
 
 const SQLJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/';
+// Steht oben neben dem Logo; bei jedem Release mit dem Git-Tag (v…) erhöhen
+const APP_VERSION = '1.1.0';
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "tempo": 1,
@@ -185,6 +187,9 @@ function App() {
       return requalifyColumns(next, schemaRef.current);
     });
   }, []);
+  // Datenbanknamen im angezeigten SQL („plauder.nutzer“) – abschaltbar, solange nur eine Datenbank offen ist
+  const [showDbNames, setShowDbNames] = React.useState(() => localStorage.getItem('sqlsp_dbnames') !== 'aus');
+  React.useEffect(() => { localStorage.setItem('sqlsp_dbnames', showDbNames ? 'an' : 'aus'); }, [showDbNames]);
   const [tab, setTab] = React.useState('build'); // build | modify
   const [viewDraft, setViewDraft] = React.useState(null); // {select, stamp}: Abfrage → „Daten ändern“ als Ansicht
   const [sqlMode, setSqlMode] = React.useState(false);
@@ -592,19 +597,21 @@ function App() {
     setNotice('✓ In Bausteine umgewandelt!' + (res.notes && res.notes.length ? ' (' + res.notes.join(', ') + ')' : ' Prüfe die Bausteine und führe sie aus.'));
   };
 
-  // Alle Bausteine auf einmal leeren; die vorige Abfrage lässt sich über „Rückgängig“ zurückholen
+  // Bausteine ganz oder schrittweise leeren; die vorige Abfrage lässt sich über „Rückgängig“ zurückholen
   const blocksEmpty = JSON.stringify(blocks) === JSON.stringify(emptyBlocks());
-  const resetBlocks = () => {
-    if (blocksEmpty || running) return;
+  const resetWithUndo = (next, text) => {
+    if (running) return;
     const before = blocks;
-    setBlocksRaw(emptyBlocks());
+    setBlocksRaw(next);
     setSqlMode(false);
     setResult(null); setStageCounts({}); setError(null); setChStatus(null);
     setNotice(<React.Fragment>
-      ✓ Alle Bausteine zurückgesetzt.{' '}
+      ✓ {text}{' '}
       <button className="qtool" onClick={() => { setBlocks(before); setNotice('✓ Vorige Abfrage wiederhergestellt.'); }}>↶ Rückgängig</button>
     </React.Fragment>);
   };
+  const resetBlocks = () => { if (!blocksEmpty) resetWithUndo(emptyBlocks(), 'Alle Bausteine zurückgesetzt.'); };
+  const resetOneStep = (next, title) => resetWithUndo(next, 'Schritt „' + title + '“ zurückgesetzt.');
 
   /* ---------- Selbst geschriebenes SQL ausführen ---------- */
   const runCustom = () => {
@@ -712,6 +719,11 @@ function App() {
   const canRun = !!buildQuerySQL(blocks);
   // Was „Als Ansicht speichern“ übernimmt: das SELECT aus dem Editor bzw. aus den Bausteinen
   const viewSource = sqlMode ? viewSelect(customSQL) : buildQuerySQL(blocks);
+  // Angezeigtes SQL: bei nur einer Datenbank auf Wunsch ohne „plauder.“ vor den Tabellen (ausgeführt wird immer voll qualifiziert)
+  const singleDb = databases.length === 1 ? databases[0] : null;
+  const shownSQL = sql => (singleDb && !showDbNames
+    ? withoutDatabase(sql, singleDb.alias, schema.tables.filter(tb => tb.database === singleDb.alias).map(tb => tb.localName))
+    : sql);
 
   // Sichtbare Teilmenge für Canvas + Baustein-Dropdowns; Tabellen der aktuellen Abfrage
   // bleiben in den Bausteinen erhalten, auch wenn ihre Karte ausgeblendet ist.
@@ -761,7 +773,9 @@ function App() {
   return (
     <div className="app">
       <header className="topbar" data-screen-label="Kopfzeile">
-        <div className="logo">SQL<span>Spielplatz</span></div>
+        <div className="logo">SQL<span>Spielplatz</span>
+          <small className="app-version" title={'SQL Spielplatz Version ' + APP_VERSION}>v{APP_VERSION}</small>
+        </div>
         <div className="db-info">
           <span className="db-dot"></span>
           <span className="db-name">{databases.length} Datenbank{databases.length === 1 ? '' : 'en'} geöffnet</span>
@@ -866,12 +880,13 @@ function App() {
               {sqlMode ? (
                 <SqlEditor value={customSQL} onChange={setCustomSQL} onRun={runCustom}
                            hasBlocks={canRun} onToBlocks={convertSqlToBlocks}
-                           onFromBlocks={() => setCustomSQL(buildQuerySQL(blocks) || '')} />
+                           onFromBlocks={() => setCustomSQL(shownSQL(buildQuerySQL(blocks) || ''))} />
               ) : (
                 <React.Fragment>
-                  <QueryBuilder blocks={blocks} setBlocks={setBlocks} schema={blockSchema} relations={blockRelations} counts={counts} runPreview={runPreview}
+                  <QueryBuilder blocks={blocks} setBlocks={setBlocks} onResetStep={resetOneStep} schema={blockSchema} relations={blockRelations} counts={counts} runPreview={runPreview}
                                 runStage={runStage} stageCounts={stageCounts} getDistinct={getDistinct} fnPreview={fnPreview} />
-                  <SqlPreview blocks={blocks} />
+                  <SqlPreview blocks={blocks} show={shownSQL}
+                              dbNames={singleDb ? { on: showDbNames, set: setShowDbNames } : null} />
                 </React.Fragment>
               )}
               <button className={'runbtn' + (running ? ' runbtn-busy' : '')}

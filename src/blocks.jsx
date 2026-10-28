@@ -37,6 +37,14 @@ function FnPicker({ fns, col, onChange, fnPreview }) {
   const samples = (open && draft.length && col && fnPreview)
     ? fnPreview(col, chainExpr(col, draft), preferNull) : [];
 
+  // Escape schließt das Fenster wie ein Klick daneben
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
   const btnLabel = active.length === 0 ? 'fx' : active.map(s => FN_DEFS[s.fn].label).join(' › ');
   const btnColor = active.length ? FN_CATS[FN_DEFS[active[active.length - 1].fn].cat].color : null;
 
@@ -49,10 +57,11 @@ function FnPicker({ fns, col, onChange, fnPreview }) {
               onClick={() => setOpen(!open)}>
         {btnLabel}
       </button>
-      {open && (
+      {/* Als eigenes Fenster mittig über der Seite – direkt am fx-Knopf würde es am rechten Rand abgeschnitten */}
+      {open && ReactDOM.createPortal(
         <React.Fragment>
           <div className="fnpop-backdrop" onClick={() => setOpen(false)}></div>
-          <div className="fnpop" data-screen-label="Funktions-Assistent">
+          <div className="fnpop" role="dialog" aria-label={'Funktionen für ' + (col || 'Spalte')} data-screen-label="Funktions-Assistent">
             <div className="fnpop-head">
               <span className="fnpop-title">Funktionen</span>
               {col ? <span className="fnpop-col">{col}</span>
@@ -124,7 +133,8 @@ function FnPicker({ fns, col, onChange, fnPreview }) {
                       onClick={() => { onChange({ fns: draft }); setOpen(false); }}>Übernehmen</button>
             </div>
           </div>
-        </React.Fragment>
+        </React.Fragment>,
+        document.body
       )}
     </span>
   );
@@ -1206,7 +1216,30 @@ const BUILD_STEPS = [
   { key: 'result', title: 'Spalten' }
 ];
 
-function QueryBuilder({ blocks, setBlocks, schema, relations, counts, runPreview, runStage, stageCounts, getDistinct, fnPreview }) {
+// Einen Schritt leeren. Ohne Start-Tabelle bleibt nichts übrig, Schritt 1 leert daher alles;
+// Schritt 2 nimmt auch Spalten, Filter usw. mit, die nur verbundene Tabellen betreffen (sonst liefe die Abfrage ins Leere);
+// Schritt 3 umfasst auch Filtern, Gruppieren, Sortieren und Begrenzen.
+function resetStep(blocks, key) {
+  const empty = emptyBlocks();
+  if (key === 'start') return empty;
+  if (key === 'joins') {
+    const start = blocks.tableAlias || blocks.table;
+    const gone = querySources(blocks).map(s => s.ref).filter(r => r !== start)
+      .map(r => new RegExp('(^|[^\\w.])' + r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\.'));
+    const keep = x => !gone.some(re => re.test(JSON.stringify(x)));
+    const group = blocks.groupBy.map((c, i) => ({ c, alias: blocks.groupAliases[i] })).filter(g => keep(g.c));
+    const nb = { ...blocks, joins: [], selectCols: blocks.selectCols.filter(keep), wheres: blocks.wheres.filter(keep),
+      groupBy: group.map(g => g.c), groupAliases: group.map(g => g.alias), aggs: blocks.aggs.filter(keep), orderBy: blocks.orderBy.filter(keep) };
+    if (!group.length) nb.groupFns = [];
+    nb.active = { ...blocks.active, join: false, where: blocks.active.where && nb.wheres.length > 0,
+      group: blocks.active.group && (nb.groupBy.length > 0 || nb.aggs.length > 0), order: blocks.active.order && nb.orderBy.length > 0 };
+    return nb;
+  }
+  return { ...blocks, selectCols: [], distinct: false, wheres: [], groupBy: [], groupFns: [], groupAliases: [],
+    aggs: [], orderBy: [], limit: empty.limit, active: { ...empty.active, join: blocks.active.join } };
+}
+
+function QueryBuilder({ blocks, setBlocks, onResetStep, schema, relations, counts, runPreview, runStage, stageCounts, getDistinct, fnPreview }) {
   const joins = blocks.active.join ? blocks.joins.filter(joinComplete).length : 0;
   const shaped = blocks.selectCols.length > 0 || MORE_STEPS.some(s => blocks.active[s.key]);
   const [step, setStep] = React.useState(!blocks.table ? 'start' : shaped ? 'result' : 'joins');
@@ -1232,6 +1265,9 @@ function QueryBuilder({ blocks, setBlocks, schema, relations, counts, runPreview
       : (nItems ? nItems + (nItems === 1 ? ' Spalte' : ' Spalten') : 'alle Spalten') + (extras.length ? ' · ' + extras.join(', ') : '')
   };
   const done = { start: !!blocks.table, joins: !!blocks.table && (joins > 0 || current === 'result'), result: nItems > 0 || blocks.active.group };
+  const currentStep = BUILD_STEPS.find(s => s.key === current);
+  const resetBlocks = resetStep(blocks, current);
+  const stepEmpty = JSON.stringify(resetBlocks) === JSON.stringify(blocks);
   return (
     <div className="qbuilder" data-screen-label="Abfrage-Bauplatz">
       <div className="qtabs" role="tablist">
@@ -1246,6 +1282,15 @@ function QueryBuilder({ blocks, setBlocks, schema, relations, counts, runPreview
           </button>
         ))}
       </div>
+      {onResetStep && (
+        <div className="qstep-tools">
+          <button type="button" className="qtool" disabled={stepEmpty}
+                  title={current === 'start' ? 'Start-Tabelle leeren – damit beginnt die ganze Abfrage von vorn'
+                    : current === 'joins' ? 'Alle Verbindungen dieses Schritts entfernen'
+                    : 'Ergebnis-Spalten, Filtern, Gruppieren, Sortieren und Begrenzen leeren'}
+                  onClick={() => onResetStep(resetBlocks, currentStep.title)}>↺ {currentStep.title} zurücksetzen</button>
+        </div>
+      )}
       <StageStrip blocks={blocks} runStage={runStage} stageCounts={stageCounts} />
       {current === 'start' && <StartStep blocks={blocks} setBlocks={setBlocks} schema={schema} counts={counts || {}}
                                          stageCounts={stageCounts} onNext={() => setStep('joins')} />}
@@ -1267,4 +1312,4 @@ function QueryBuilder({ blocks, setBlocks, schema, relations, counts, runPreview
 }
 
 
-Object.assign(window, { CountUp, QueryBuilder, activateBlock, FnPicker, fnDropProps, ComboValue });
+Object.assign(window, { CountUp, QueryBuilder, resetStep, activateBlock, FnPicker, fnDropProps, ComboValue });
